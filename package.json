@@ -6,9 +6,10 @@
   "description": "手机接着电脑端的 Hermes 会话聊天 —— 单页 Web + Android 壳",
   "scripts": {
     "test": "node tools/hm-verify.js index.html main && node tools/hm-verify.js index.html login",
+    "test:ci": "node tools/verify_static.js",
     "verify": "python3 tools/verify_all.py"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   }
 }

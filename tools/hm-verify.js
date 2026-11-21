@@ -197,9 +197,17 @@ globalThis.fetch = async (u, o = {}) => {
 };
 
 /* ---------- WebSocket: 计数 + 记外发帧 ---------- */
+// Node 20 没有全局 WebSocket（21 才加，22 才稳定）。CI 是 20，缺了不能直接
+// `class extends undefined`；拿一个只记账、不真发包的桩顶上，断言看的是页面
+// 自己的状态机，不看连接有没有真的建立。
 const sockets = [];
 const RealWS = globalThis.WebSocket;
-globalThis.WebSocket = class extends RealWS {
+const WSBase = RealWS || class {
+  constructor(u) { this.url = u; this.readyState = 0; }
+  send() {} close() { this.readyState = 3; }
+  addEventListener() {} removeEventListener() {}
+};
+globalThis.WebSocket = class extends WSBase {
   constructor(u, p) { super(u, p); this._sent = []; sockets.push(this); }
   send(d) { try { this._sent.push(Object.assign(JSON.parse(d), { __t: Date.now() })); } catch (e) {}
             return super.send(d); }

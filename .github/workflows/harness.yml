@@ -1,9 +1,11 @@
 name: harness
 
-# What CI can prove without a desktop: the page state machine runs in Node with
-# a hand-rolled DOM, so it needs no gateway, no Android SDK and no display.
-# The full `npm run verify` (real APK build + real gateway + live addresses) is
-# a local, Windows-only check — see README "验证".
+# What CI can prove without a desktop or a gateway: the page script parses,
+# md() keeps its twelve behaviours, and the strings that regress most often are
+# still in place. `npm test` (tools/hm-verify.js) drives the real state machine
+# but talks to a live gateway on localhost:9119, so it stays local; the full
+# `npm run verify` (real APK build + live addresses) is Windows-only. See
+# README "验证".
 
 on:
   push:
@@ -19,8 +21,8 @@ jobs:
         with:
           node-version: "20"
 
-      - name: page state machine (main + login)
-        run: npm test
+      - name: page state machine (static)
+        run: npm run test:ci
 
       - name: python syntax
         run: python3 -m py_compile ipv4_bridge.py bridge_supervisor.py tools/verify_all.py
