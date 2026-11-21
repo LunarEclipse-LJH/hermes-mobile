@@ -79,14 +79,22 @@ bash apk/build.sh          # 产出 hermes-mobile.apk，用同一个 keystore �
 
 ## 验证
 
-两档，从快到全：
+验证有三档，从快到全：
 
 ```bash
-npm test        # 40 条页面状态机断言（main 38 + login 2），~20s，不需要网关、不碰 APK
+npm test        # 40 条页面状态机断言（main 38 + login 2），~20s，需要本机 dashboard 在 9119 上
 npm run verify  # 78 项全量：真打包 APK + 真网关真登录 + 上面 40 条 + 静态事实断言
 ```
 
-`npm test` 用 Node 里手搓的 DOM 跑页面自己的脚本，覆盖流式、断线、事件过滤、markdown 规则、长按容差、翻页补偿这些**行为**，任何环境都能跑（CI 就跑这一档）。
+还有一档更快的、哪里都能跑的：
+
+```bash
+npm run test:ci # 12 项纯静态：脚本语法 + md() 12 项行为 + 8 条最易回归的事实，秒级
+```
+
+`npm test` 用 Node 里手搓的 DOM 跑页面自己的脚本，覆盖流式、断线、事件过滤、markdown 规则、长按容差、翻页补偿这些**行为**；它要真的登录 `http://localhost:9119`、拉会话、发帧，所以**必须有正在跑的 dashboard**，进不了 CI。
+
+`npm run test:ci` 是 `node tools/verify_static.js`：只读 `index.html`，把内嵌脚本丢给 `vm.Script` 编译一遍、把 `md()` 抠出来跑 12 个用例、再核几条最容易回归的字符串（输入框高度、三级嵌套、事件过滤、socket 认身份、上传上限文案）。不连网关、不碰 Android SDK，任何平台都能跑，`.github/workflows/harness.yml` 跑的就是它。
 
 `npm run verify` 是 `python3 tools/verify_all.py`，也是唯一能说"改完了"的那档，它会：
 
@@ -95,7 +103,7 @@ npm run verify  # 78 项全量：真打包 APK + 真网关真登录 + 上面 40 
 3. 对几十条静态事实做子串断言（viewport、触控热区、上传上限、事件过滤、发布卫生……）；
 4. 最后一条是 **「验证的树 == 提交的树」**：源码必须已提交。所以顺序永远是 `git commit` → `verify`。
 
-它需要 Windows + Android SDK + 正在跑的 dashboard，因此不进 CI；CI 只跑 `npm test` 与一把私密信息扫描（`.github/workflows/harness.yml`）。
+它需要 Windows + Android SDK + 正在跑的 dashboard，因此不进 CI；CI 只跑 `npm run test:ci` 与一把私密信息扫描（`.github/workflows/harness.yml`）。
 
 ## 安全模型（请读一下）
 

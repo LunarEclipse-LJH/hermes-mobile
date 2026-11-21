@@ -79,8 +79,9 @@ wscript C:\path\to\hermes-mobile\runner.vbs
 三档，从快到全。**跑之前先把 dashboard 起着**（`wscript runner.vbs`），后两档要连真网关。
 
 ```bash
-npm test        # 页面状态机 40 条（main 38 + login 2），~20s，不需要网关、不碰 APK
-npm run verify  # 全量 67 项，~90s：真打包 APK + 真网关 + 上面 40 条 + 静态事实
+npm run test:ci # 12 项纯静态：脚本语法 + md() 12 项 + 8 条最易回归的事实，秒级，不连网关
+npm test        # 页面状态机 40 条（main 38 + login 2），~20s，需要 dashboard 在 9119 上
+npm run verify  # 全量 78 项，~90s：真打包 APK + 真网关 + 上面 40 条 + 静态事实
 ```
 
 `npm run verify` 就是 `python3 tools/verify_all.py`，也是唯一能说「改完了」的那档。它会：
