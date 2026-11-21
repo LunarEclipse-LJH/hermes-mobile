@@ -1,0 +1,42 @@
+name: harness
+
+# What CI can prove without a desktop: the page state machine runs in Node with
+# a hand-rolled DOM, so it needs no gateway, no Android SDK and no display.
+# The full `npm run verify` (real APK build + real gateway + live addresses) is
+# a local, Windows-only check — see README "验证".
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  page:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: page state machine (main + login)
+        run: npm test
+
+      - name: python syntax
+        run: python3 -m py_compile ipv4_bridge.py bridge_supervisor.py tools/verify_all.py
+
+      - name: no private facts in the tree
+        run: |
+          set -e
+          # needles are built from parts so this file never matches itself
+          P1="Hermes""9119"
+          P2="hermes""123"
+          PAT='C:\\Users\\[A-Za-z0-9_.-]+'
+          PAT="$PAT|[A-Za-z0-9_-]+\.local:9119"
+          PAT="$PAT|100\.64\.[0-9]+\.[0-9]+"
+          PAT="$PAT|${P1}|${P2}"
+          if git grep -nIE "$PAT" -- . ; then
+            echo "::error::private path / host / address / password found in the tree"
+            exit 1
+          fi
+          echo "clean"

@@ -1,0 +1,25 @@
+apk/build/
+*.class
+*.dex
+dashboard.log
+assets/img/
+addrs.json
+__pycache__/
+*.pyc
+
+# 签名材料绝不进仓库（私钥泄漏 = 别人能签同签名包覆盖安装）
+apk/hermes.keystore
+apk/*.keystore
+*.keystore
+*.pass
+*.secret
+
+# 构建产物：不是源码，每次重签字节都不同（PKCS#7 带签名时间），而且它把
+# 「地址/账号」这类本机事实固化进了二进制。要装包自己 `bash apk/build.sh`。
+hermes-mobile.apk
+hermes-mobile.apk.idsig
+
+# 走查截图 / 临时探针，不进仓库
+*.tmp
+screenshots/*.png
+!docs/screenshot*.png

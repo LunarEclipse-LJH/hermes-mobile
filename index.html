@@ -1,0 +1,2490 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Hermes">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png"><link rel="manifest" href="/manifest.json">
+<title>Hermes · 手机端</title>
+<style>
+:root{
+  --bg:#0b0f14; --bg2:#0f151d; --fg:#e6edf3; --dim:#8b98a5; --line:#1e2933;
+  --acc:#4ea1ff; --acc-dim:#1c4a7a; --user:#1d4ed8; --card:#121a23; --ok:#3fb950; --warn:#d29922; --err:#f85149;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{
+  background:var(--bg);color:var(--fg);
+  font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  overscroll-behavior:none;
+  /* manipulation = pan + pinch-zoom，但没有 double-tap-zoom。
+     去掉 viewport 的 maximum-scale 是为了能双指放大看代码，代价是双击也会缩放 ——
+     双击在气泡上是要触发点击的，所以在这里单独把双击缩放关掉，双指仍然可用。 */
+  touch-action:manipulation;
+}
+#app{display:flex;flex-direction:column;height:100dvh}
+header{
+  flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:calc(env(safe-area-inset-top) + 8px) 12px 8px;
+  background:var(--bg2);border-bottom:1px solid var(--line);
+}
+header .ttl{flex:1;min-width:0;font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+header .ttl:active{opacity:.65}
+header .sub{display:block;font-weight:400;font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.icon{
+  width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-size:19px;
+  background:var(--card);border:1px solid var(--line);flex:0 0 auto;position:relative;
+}
+/* 视觉保持 38，热区撑到 46：iOS HIG 44 / Material 48 的触控下限，布局不变 */
+.icon::after{content:'';position:absolute;inset:-4px}
+.icon:active{background:#1b2530}
+main{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 12px 6px}
+#msgs{display:flex;flex-direction:column;gap:12px;padding-bottom:8px}
+.row{display:flex;flex-direction:column;max-width:100%}
+.row.user{align-items:flex-end}
+.row.assistant{align-items:flex-start}
+.bubble{
+  max-width:92%;padding:9px 13px;border-radius:16px;word-wrap:break-word;overflow-wrap:anywhere;
+  white-space:normal;
+}
+.row.user .bubble{background:var(--user);border-bottom-right-radius:5px}
+.row.assistant .bubble{background:var(--card);border:1px solid var(--line);border-bottom-left-radius:5px;max-width:100%}
+.bubble p{margin:0 0 8px}
+.bubble p:last-child{margin-bottom:0}
+.bubble h1,.bubble h2,.bubble h3{font-size:15px;margin:10px 0 6px}
+.bubble ul,.bubble ol{margin:6px 0;padding-left:20px}
+.bubble li{margin:2px 0}
+.bubble li.sub{margin-left:16px}
+.bubble li.sub2{margin-left:32px}
+.bubble li.sub3{margin-left:48px}
+/* 任务列表：模型写计划常用 "- [ ]"，以前会把 "[ ]" 原样吐在正文里 */
+.bubble ul.tasks{padding-left:20px}
+.bubble li.task{list-style:none;margin-left:-18px}
+.bubble li.task::before{content:'☐';color:var(--dim);margin-right:6px}
+.bubble li.task.done{color:var(--dim)}
+.bubble li.task.done::before{content:'☑';color:#4ea1ff}
+.bubble hr{border:0;border-top:1px solid var(--line);margin:10px 0}
+.bubble blockquote{border-left:3px solid var(--acc-dim);margin:6px 0;padding:2px 10px;color:var(--dim)}
+.bubble code{background:#1b2431;padding:1px 5px;border-radius:5px;font-size:13px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.bubble pre{background:#0a1017;border:1px solid var(--line);border-radius:10px;padding:10px;
+  overflow-x:auto;margin:0;font-size:12.5px;line-height:1.45}
+/* 代码块外层：给「复制」按钮一个不被横向滚动带走的定位基准。
+   以前按钮是 pre 的子元素，pre 一横滚按钮就跟着跑到代码中间（实测滚 256px 后
+   x 从 322 变 66）；而且 pre 的 innerText 会把按钮文字算进去，长按复制会多出「复制」两字。 */
+.bubble .prewrap{position:relative;margin:8px 0}
+.bubble pre code{background:none;padding:0}
+.bubble pre[data-lang]{padding-top:23px}
+.bubble pre[data-lang]::before{content:attr(data-lang);position:absolute;top:0;left:0;
+  font-size:10px;color:#5b6b7d;background:#0f1720;padding:2px 9px;border-radius:9px 0 6px 0;
+  border-right:1px solid var(--line);border-bottom:1px solid var(--line);letter-spacing:.4px}
+/* 单元格允许换行：以前是 nowrap，英文短值没问题，但中文长句也顶着不换 ——
+   实测一张三列表格撑到 893px（视口 338），要横拖 555px 才看得完一行。 */
+.bubble table{border-collapse:collapse;margin:8px 0;font-size:12.5px;display:block;
+  overflow-x:auto;max-width:100%}
+.bubble th,.bubble td{border:1px solid var(--line);padding:5px 9px;text-align:left;
+  white-space:normal;word-break:break-word;min-width:84px;max-width:72vw}
+.bubble th{background:#16202b;font-weight:600;color:#c3d2e0}
+.bubble tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+.bubble a{color:var(--acc)}
+.bubble img{max-width:100%;border-radius:8px}
+.meta{font-size:11px;color:var(--dim);margin:3px 4px 0}
+.tool{
+  font-size:12px;color:var(--dim);background:#0d141c;border:1px solid var(--line);border-radius:9px;
+  margin:0 0 2px;max-width:100%;overflow:hidden;
+  font-family:ui-monospace,Menlo,Consolas,monospace;
+}
+.tool .th{display:flex;align-items:center;gap:7px;padding:6px 9px;cursor:pointer}
+.tool .th:active{background:#111a24}
+.tool .arw{color:#55657a;flex:0 0 auto;transition:transform .15s}
+.tool.open .arw{transform:rotate(90deg)}
+.tool .tn{color:#9db2c8;flex:0 0 auto;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tool .tp{color:#5f7185;font-size:11px;flex:1 1 auto;min-width:0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.tool .ts{margin-left:auto;font-size:10.5px;color:#c99a2e;letter-spacing:.3px;flex:0 0 auto}
+.tool.ok .ts{color:var(--ok)}
+.tool .tb,.tool .tr{display:none;padding:0 9px 7px;white-space:pre-wrap;word-break:break-word;
+  color:#7f8f9f;line-height:1.45;max-height:280px;overflow:auto}
+.tool.open .tb,.tool.open .tr{display:block}
+.tool .tr{border-top:1px dashed var(--line);padding-top:6px;margin-top:1px;color:#93a3b3}
+.thinking{font-size:12px;color:var(--dim);font-style:italic;padding:2px 6px}
+.cursor{display:inline-block;width:7px;height:14px;background:var(--acc);vertical-align:-2px;margin-left:2px;animation:bl 1s steps(1) infinite}
+@keyframes bl{50%{opacity:0}}
+footer{
+  flex:0 0 auto;display:flex;gap:8px;align-items:flex-end;padding:8px 12px calc(env(safe-area-inset-bottom) + 8px);
+  background:var(--bg2);border-top:1px solid var(--line);
+}
+#ta{
+  flex:1;min-height:41px;max-height:132px;resize:none;/* 41 = 边框 2 + 上下内距 18 + 行高 21，
+     一行内容正好放满：10px 内距时 clientHeight 39 < scrollHeight 41，空输入框也常驻一条
+     竖向滚动条、末行还被切 2px。min-height 也要跟着改成 41，40 会再压掉 1px。 */
+  padding:9px 12px;border-radius:14px;
+  background:#0a1017;color:var(--fg);border:1px solid var(--line);font:inherit;line-height:1.4;outline:none;
+}
+#ta:focus{border-color:var(--acc-dim)}
+#send{
+  flex:0 0 auto;height:40px;padding:0 16px;border-radius:14px;background:var(--acc);color:#03111f;
+  font-weight:600;font-size:14px;
+}
+#send:disabled{background:#22303d;color:var(--dim)}
+.conn{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 62px);
+  font-size:11px;padding:3px 10px;border-radius:99px;background:#1b2530;color:var(--dim);
+  border:1px solid var(--line);opacity:0;transition:opacity .25s;pointer-events:none;z-index:20;
+}
+.conn.on{opacity:1}
+.conn.bad{background:#3a1216;color:#f85149;border-color:#5a1a20}
+/* 壳有新版本时压一条细带在 header 下面，点它去下 APK */
+#upd{
+  display:block;padding:6px 12px;text-align:center;font-size:12px;
+  background:#0f2a1c;color:#5ee08a;border-bottom:1px solid #1d4030;
+  text-decoration:none;
+}
+#upd b{font-weight:600}
+#upd[hidden]{display:none}
+.drawer{
+  position:fixed;inset:0;background:rgba(4,7,10,.82);z-index:30;display:none;
+  backdrop-filter:blur(3px);
+}
+.drawer.on{display:block}
+.panel{
+  position:absolute;left:0;right:0;bottom:0;top:calc(env(safe-area-inset-top) + 46px);
+  background:var(--bg);border-top-left-radius:18px;border-top-right-radius:18px;
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.panel h2{margin:0;padding:14px 16px 10px;font-size:14px;color:var(--dim);font-weight:600;
+  display:flex;align-items:center;justify-content:space-between}
+#list{overflow-y:auto;padding:0 8px 16px}
+.addrbox{flex:0 0 auto;border-top:1px solid var(--line);padding:8px 12px 12px;background:var(--bg2)}
+.addrbox .ah2{font-size:11px;color:var(--dim);margin:2px 0 4px}
+.addrbox .u{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--acc);
+  word-break:break-all;padding:4px 0;cursor:pointer}
+.addrbox .u:active{opacity:.6}
+.addrbox .stamp{font-size:10.5px;color:#6b7684;margin-top:4px}
+.item{
+  padding:11px 12px;border-radius:12px;margin:4px 0;background:var(--card);border:1px solid var(--line);
+  display:flex;gap:10px;align-items:center;
+}
+.item:active{background:#1b2530}
+.item .t{flex:1;min-width:0}
+.item .n{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .d{font-size:11px;color:var(--dim);margin-top:2px}
+.badge{font-size:10px;padding:1px 6px;border-radius:6px;background:#1b2530;color:var(--dim);flex:0 0 auto}
+.badge.gui{background:#12324a;color:#7cc4ff}
+.badge.feishu,.badge.telegram,.badge.qqbot{background:#13351f;color:#6ee7a0}
+.empty{color:var(--dim);text-align:center;padding:40px 0;font-size:13px}
+#login{
+  position:fixed;inset:0;background:var(--bg);z-index:50;display:none;
+  align-items:center;justify-content:center;padding:24px;
+}
+#login.on{display:flex}
+#login form{width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px}
+#login h1{font-size:18px;margin:0 0 6px}
+#login input{padding:12px;border-radius:12px;border:1px solid var(--line);background:#0a1017;color:var(--fg);font:inherit}
+#login button{padding:12px;border-radius:12px;background:var(--acc);color:#03111f;font-weight:600}
+#login .err{color:var(--err);font-size:12px;min-height:16px}
+/* --- session list v2 --- */
+.search{padding:0 12px 8px}
+.search input{width:100%;padding:9px 12px;border-radius:10px;border:1px solid var(--line);
+  background:#0a1017;color:var(--fg);font:inherit;font-size:14px;outline:none}
+.search input:focus{border-color:var(--acc-dim)}
+.grp{font-size:11px;color:var(--dim);font-weight:600;padding:12px 14px 4px;letter-spacing:.4px}
+.item.cur{border-color:var(--acc-dim);background:#0f1c2a}
+.item .del{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
+  color:var(--dim);font-size:15px;flex:0 0 auto;border:1px solid transparent;position:relative}
+/* 归档是破坏性操作，热区小容易点漏也容易误触 —— 撑到 46 */
+.item .del::after{content:'';position:absolute;inset:-6px}
+.item .del:active{background:#3a1216;color:var(--err);border-color:#5a1a20}
+.more{text-align:center;color:var(--acc);font-size:13px;padding:14px}
+/* --- chat extras --- */
+#toBottom{position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom) + 74px);
+  width:38px;height:38px;border-radius:50%;background:var(--card);border:1px solid var(--line);
+  display:none;place-items:center;z-index:15;color:var(--dim);font-size:16px}
+#toBottom.on{display:grid}
+#send.stop{background:var(--err);color:#fff}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 130px);
+  background:#1b2530;color:var(--fg);padding:8px 16px;border-radius:10px;font-size:13px;
+  opacity:0;transition:opacity .2s;pointer-events:none;z-index:40;border:1px solid var(--line);max-width:80%}
+.toast.on{opacity:1}
+.cc{position:absolute;top:5px;right:5px;font-size:10px;padding:5px 9px;border-radius:6px;
+  background:#1b2530;color:var(--dim);border:1px solid var(--line);opacity:.85}
+/* 视觉 28×22，热区撑到 44：手指点得到，又不占代码的地方 */
+.cc::after{content:'';position:absolute;inset:-8px}
+.sep{text-align:center;font-size:11px;color:var(--dim);padding:8px 0 2px;opacity:.75}
+#attaches{display:none;gap:8px;padding:8px 12px 0;overflow-x:auto;flex:0 0 auto}
+#attaches.on{display:flex}
+#attaches .thumb{position:relative;flex:0 0 auto;width:60px;height:60px;border-radius:10px;
+  overflow:hidden;border:1px solid var(--line)}
+#attaches img{width:100%;height:100%;object-fit:cover;display:block}
+#attaches .thumb button{position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;
+  background:rgba(0,0,0,.75);color:#fff;font-size:11px;line-height:1;display:grid;place-items:center;padding:0}
+#attaches .fu{position:relative;flex:0 0 auto;display:flex;align-items:center;gap:6px;height:60px;
+  max-width:180px;padding:0 26px 0 10px;border-radius:10px;border:1px solid var(--line);background:#0d141c}
+#attaches .fu .fn{font-size:12px;line-height:1.25;word-break:break-all;overflow:hidden;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+#attaches .fu .fs{font-size:10.5px;color:var(--dim)}
+#attaches .fu button{position:absolute;top:2px;right:2px}
+#btnImg,#btnFile{font-size:16px}
+.bubble .filechip{font-size:12px;color:var(--fg,#dbe6f0);background:#0d141c;border:1px solid var(--line);
+  border-radius:8px;padding:4px 9px;display:inline-block;margin:4px 0;word-break:break-all;max-width:100%}
+/* ---------- 图片 ---------- */
+.bubble img.hi{max-width:100%;height:auto;border-radius:10px;display:block;margin:6px 0;cursor:zoom-in;
+  background:#0a1017}
+.bubble img.hi.broken{display:none}
+.bubble .imgmiss{font-size:11.5px;color:var(--dim);background:#0d141c;border:1px dashed var(--line);
+  border-radius:8px;padding:5px 9px;display:inline-block;margin:4px 0;word-break:break-all}
+/* 看图：默认整图适应屏幕；点一下切成原始尺寸（可拖动细看），再点回适应；
+   点黑底关掉。以前是「点任意处就关」，而且只能缩小 —— 615 宽的图在 390 视口里被压到
+   390，长截图更是按高度限死后只剩一百多像素宽，等于看不清。 */
+#lightbox{position:fixed;inset:0;background:rgba(0,0,0,.95);display:none;z-index:60;
+  align-items:center;justify-content:center;overflow:auto}
+#lightbox.on{display:flex}
+#lightbox img{max-width:100%;max-height:100%;object-fit:contain;transition:transform .12s}
+#lightbox.on.zoom{display:block;overflow:auto;-webkit-overflow-scrolling:touch}
+#lightbox.on.zoom img{max-width:none;max-height:none;width:auto;height:auto;object-fit:fill;display:block}
+#lightbox .x{position:fixed;top:calc(env(safe-area-inset-top) + 10px);right:12px;width:42px;height:42px;
+  border-radius:50%;background:rgba(255,255,255,.14);display:grid;place-items:center;font-size:20px;color:#fff}
+#lightbox .x::after{content:'';position:absolute;inset:-6px}
+
+/* ---------- 审批 ---------- */
+#approve{flex:0 0 auto;margin:0 10px 6px;border:1px solid #5a3f00;background:#1d1608;border-radius:12px;
+  overflow-y:auto;max-height:44vh;display:none}
+#approve.on{display:block}
+#approve .apv + .apv{border-top:1px solid #3a2c0a}
+#approve .ah{display:flex;align-items:center;gap:7px;padding:9px 11px 6px;font-size:12px;color:#e0b34a}
+#approve .ah b{color:#f0c75e;font-weight:600;flex:0 0 auto}
+#approve .ah .n{margin-left:auto;font-size:11px;color:#a08a52}
+#approve .ac{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:#cdbd92;
+  background:#120d04;margin:0 9px 8px;padding:7px 9px;border-radius:8px;max-height:110px;overflow:auto;
+  white-space:pre-wrap;word-break:break-all;line-height:1.4}
+#approve .ad{font-size:11.5px;color:#9c8a63;margin:0 11px 8px;line-height:1.4}
+#approve .ab{display:flex;gap:6px;padding:0 9px 9px;flex-wrap:wrap}
+#approve .ab button{font-size:12.5px;padding:8px 12px;border-radius:9px;border:1px solid var(--line);
+  background:#1b2530;color:var(--fg);flex:1 1 0;min-width:0}
+#approve .ab button.deny{background:#2a1316;border-color:#5c1f24;color:#ff9b96;flex:0 0 auto;padding:8px 16px}
+#approve .ab button.ok{background:#12331c;border-color:#1f5c30;color:#7ee2a0}
+#approve .cq{padding:0 11px 8px}
+#approve .cin{flex:1 1 120px;min-width:0;background:var(--card);border:1px solid var(--line);
+  border-radius:9px;color:var(--fg);font:inherit;font-size:13px;padding:8px 10px}
+#approve .ab button:disabled{opacity:.45}
+
+/* ---------- 失败重试 ---------- */
+.row .retry{font-size:11.5px;color:#ff9b96;margin-top:4px;align-self:flex-end;
+  border:1px solid #5c1f24;background:#2a1316;border-radius:8px;padding:4px 10px}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <button class="icon" id="btnList" aria-label="会话列表">☰</button>
+    <div class="ttl" id="ttlBox" title="点击切换模型"><span id="ttlMain">Hermes</span><span class="sub" id="ttlSub">连接中…</span></div>
+    <button class="icon" id="btnReconn" aria-label="重连">⟳</button>
+    <button class="icon" id="btnNew" aria-label="新对话">＋</button>
+  </header>
+  <a id="upd" href="hermes-mobile.apk" hidden>APK 有新版本 <b></b> · 点这里下载</a>
+  <main id="scroll"><div id="msgs"></div></main>
+  <div id="approve"></div>
+  <div id="attaches"></div>
+  <footer>
+    <button id="btnFile" class="icon" aria-label="发送文件">📎</button>
+    <button id="btnImg" class="icon" aria-label="发送图片">🖼</button>
+    <textarea id="ta" rows="1" placeholder="说点什么…" autocomplete="off"></textarea>
+    <button id="send" disabled>发送</button>
+  </footer>
+</div>
+<input type="file" id="fileIn" accept="image/*" multiple hidden>
+<input type="file" id="filePick" multiple hidden>
+<div class="conn" id="conn"></div>
+<button id="toBottom" aria-label="回到底部">↓</button>
+<div class="toast" id="toast"></div>
+<div id="lightbox"><button class="x" id="lbClose">×</button><img id="lbImg" alt=""></div>
+
+<div class="drawer" id="drawer">
+  <div class="panel">
+    <h2><span>最近会话</span><button class="icon" id="closeDrawer">×</button></h2>
+    <div class="search"><input id="q" placeholder="搜索会话…" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <div id="list"><div class="empty">加载中…</div></div>
+    <div class="addrbox" id="addrBox"></div>
+  </div>
+</div>
+
+<div class="drawer" id="modelDrawer">
+  <div class="panel">
+    <h2><span>选择模型</span><button class="icon" id="closeModel">×</button></h2>
+    <div class="search"><input id="mq" placeholder="搜索模型…" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <div id="mlist"><div class="empty">加载中…</div></div>
+  </div>
+</div>
+
+<div id="login">
+  <form id="loginForm">
+    <h1>Hermes · 手机端</h1>
+    <div class="err" id="loginErr"></div>
+    <input id="lu" placeholder="用户名" autocomplete="username">
+    <input id="lp" type="password" placeholder="密码" autocomplete="current-password">
+    <button type="submit">登录</button>
+    <button type="button" id="btnRelogin">重新连接</button>
+  </form>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+const $ = s => document.querySelector(s);
+const scroll = $('#scroll'), msgsEl = $('#msgs'), ta = $('#ta'), sendBtn = $('#send');
+const conn = $('#conn'), drawer = $('#drawer'), listEl = $('#list');
+const qEl = $('#q'), toBottomEl = $('#toBottom'), toastEl = $('#toast');
+const modelDrawer = $('#modelDrawer'), mlist = $('#mlist');
+const mqEl = $('#mq');
+const fileIn = $('#fileIn'), attaches = $('#attaches'), btnImg = $('#btnImg');
+const filePick = $('#filePick'), btnFile = $('#btnFile');
+const approveEl = $('#approve'), lightbox = $('#lightbox'), lbImg = $('#lbImg');
+let pendingImgs = [];
+let pendingFiles = [];   // {name, size, ref} —— ref 就是网关回的 @file:<path>，发送时前置到正文
+// file.attach 走 WebSocket 里的 base64；服务端上限 256 MB，手机上内存先扛不住。
+// 25 MB 的账：FileReader 先读成 dataURL（+33%），再塞进一帧 JSON 字符串（又一份），
+// 峰值内存 ≈ 2.7 倍 —— 25 MB 的文件要吃掉 67 MB 堆，手机上很容易直接把 WebView 撑崩。
+// 10 MB 是「PDF / ppt / 长视频截图够用」和「峰值 27 MB，标签页还活着」的分界。
+// 要发更大的，走分片（网关有 /api/files/upload-stream），别在这条路上加内存。
+const FILE_MAX = 10 * 1024 * 1024;
+let toastTimer = null;
+function toast(t){
+  toastEl.textContent = t;
+  toastEl.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('on'), 1800);
+}
+
+/* 上传指示：toast 1.8 秒就自己消失，而 10 MB 走 WebSocket 可能要十几秒 ——
+   中间一点反馈都没有，用户会以为卡死。这里用每 0.5 秒刷新的 toast 撑住整段上传
+   （toast() 每次调用都会重设隐藏定时器，所以一直不会消失）。 */
+let upTickTimer = 0;
+function uploadTick(label){
+  const t0 = Date.now();
+  clearInterval(upTickTimer);
+  const paint = () => toast(label + ' · 已 ' + Math.round((Date.now() - t0) / 1000) + 's');
+  paint();
+  upTickTimer = setInterval(paint, 500);
+  return () => { clearInterval(upTickTimer); upTickTimer = 0; };
+}
+
+let rafPending = false;
+let unread = 0;
+function syncUnread(){
+  if (unread > 0 && !S.autoScroll){
+    toBottomEl.textContent = '↓' + (unread > 99 ? '99+' : unread);
+    toBottomEl.classList.add('on');
+  } else {
+    toBottomEl.textContent = '↓';
+    if (S.autoScroll) toBottomEl.classList.remove('on');
+  }
+}
+function haptic(ms){ try { if (navigator.vibrate) navigator.vibrate(ms || 12); } catch(e){} }
+
+function fmtTok(n){
+  n = Number(n) || 0;
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+  return String(n);
+}
+
+async function refreshUsage(){
+  if (!S.sid) return null;
+  try {
+    const u = await rpc('session.usage', {session_id: S.sid}, 15000);
+    S.usage = u || null;
+    if (u && typeof u.output === 'number') S.lastOutput = u.output;
+    syncSub();
+    return u;
+  } catch(e){ return null; }
+}
+
+const S = {
+  ws: null, sid: null, storedId: null, title: '',
+  rpcSeq: 0, pending: new Map(),
+  cur: null,          // {row, body, text}
+  think: null,
+  streaming: false,
+  autoScroll: true,
+  authProbed: false,
+  retries: 0,
+  usage: null, lastOutput: 0, turnStart: 0,
+  cap: false,         // client.capabilities 已声明
+  approvals: new Map(),  // srq-id -> {el}
+  lastFail: null,     // 上一条失败的用户消息 {text, row}
+  lastFrameAt: 0,     // 最后一帧到达时刻（含 pong）——判僵尸 socket 用
+  turnUserText: '',   // 本轮发出去的 payload（收尾时并进本地历史缓存）
+  turnMedia: false,   // 本轮带了图片附件（@image 引用由服务端补，缓存拼不出来 → 不作数）
+};
+
+/* ---------- helpers ---------- */
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// 带超时的 fetch：手机上一次 fetch 卡住（地址黑洞 / 弱网 / 网关没起来）就会永不
+// resolve，connect() 里的 connecting 标志跟着永远为 true —— 之后每次点「重新连接」
+// 都走 if(connecting) return 直接返回，界面一动不动。这就是「点了没反应」。
+function fetchT(url, opts, ms){
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms || 8000);
+  return fetch(url, Object.assign({}, opts || {}, {signal: ctl.signal}))
+    .finally(() => clearTimeout(timer));
+}
+
+/* ---------- 图片（历史里的 @image:<path> / [Image attached at: path]） ---------- */
+const IMG_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
+function imgBase(p){
+  const s = String(p || '').trim().replace(/^`+|`+$/g, '').replace(/^["']+|["']+$/g, '');
+  const parts = s.split(/[\\/]/);
+  return parts[parts.length - 1] || '';
+}
+// 图片尺寸记忆：第一次加载完就记住 naturalWidth/Height，下次渲染直接写进 width/height。
+// 浏览器据此按真实比例预留空间 —— 图片晚到不会再把整页往下顶（实测 20 张图：加载前
+// 每张高 0，加载后 45px，页面总高从 1718 变 2627）。只读本地记录，不发额外请求；
+// 满了先丢最老的。第一次看新图仍会跳一次，之后就稳了。
+const IMGDIM = (() => {
+  const KEY = 'hermes.imgdim', MAX = 400;
+  let M = {}, t = 0;
+  try { M = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { M = {}; }
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(M)); } catch (e) {} };
+  // 一批图几乎同时到，攒 300ms 写一次；不用「攒够 N 条」那种计数，否则最后不满 N 条的
+  // 那几张会一直留在内存里，用户直接关页面就白记了（实测 20 张只落 16 条）。
+  const later = () => { clearTimeout(t); t = setTimeout(save, 300); };
+  return {
+    get: p => M[p] || '',
+    set: (p, w, h) => {
+      if (!p || !(w > 0) || !(h > 0)) return;
+      const v = w + 'x' + h;
+      if (M[p] === v) return;
+      M[p] = v;
+      const ks = Object.keys(M);
+      if (ks.length > MAX) ks.slice(0, ks.length - MAX).forEach(k => { delete M[k]; });
+      later();
+    },
+    flush: () => { clearTimeout(t); t = 0; save(); },
+    // 调试/测试口：光删 localStorage 不够 —— 导航前 pagehide 会 flush，把内存里的旧值写回去
+    clear: () => { clearTimeout(t); t = 0; M = {}; try { localStorage.removeItem(KEY); } catch (e) {} },
+    size: () => Object.keys(M).length,
+  };
+})();
+
+function imgTag(p){
+  // 历史里的图片引用实测 95/95 都是绝对路径（"只有文件名"的 57 处全是文档占位符
+  // <path> / <路径>，不是真引用）。所以直接走 /api/fs/download：
+  //   - 要登录 cookie 才给字节，不再靠 assets/img 里那堆免鉴权硬链接（公网可枚举）；
+  //   - 新图立刻可见，不用重启 link_images 重灌硬链接；
+  //   - Content-Disposition: attachment 不影响 <img> 子资源（真 Chrome 实测 615×90 正常渲染）。
+  const raw = String(p || '').trim().replace(/^`+|`+$/g, '').replace(/^["']+|["']+$/g, '')
+                             .replace(/\\\\+/g, '\\');   // 防御：极少数行是双重转义存进去的
+  const base = imgBase(raw);
+  if (!base || base === '..' || base === '.' || !IMG_EXT.test(base)) {
+    return '<span class="imgmiss">🖼 图片未同步</span>';
+  }
+  if (!/[\\/]/.test(raw)) return '<span class="imgmiss">🖼 图片未同步</span>';
+  const d = IMGDIM.get(raw).split('x');
+  const box = d.length === 2 ? ' width="' + d[0] + '" height="' + d[1] + '"' : '';
+  return '<img class="hi"' + box + ' src="/api/fs/download?path=' + encodeURIComponent(raw) +
+         '" alt="' + esc(base) + '" loading="lazy">';
+}
+// 非图片文件：网关只回 @file:<绝对路径>，手机端拿不到字节（文件在他电脑上），
+// 所以渲染成一个「已附加」的条，不给下载链接 —— 别让用户点了以为能下
+function fileTag(p){
+  const s = String(p || '').trim().replace(/^`+|`+$/g, '').replace(/^["']+|["']+$/g, '');
+  const base = (s.split(/[\\/]/).pop() || s);
+  return '<span class="filechip">📎 ' + esc(base) + '</span>';
+}
+// 用户消息：纯文本 + 换行 + 图片，不套 markdown（避免把 * 之类当格式）
+function userHTML(text){
+  const imgs = [];
+  const stash = h => { imgs.push(h); return '\u0000I' + (imgs.length - 1) + '\u0000'; };
+  let s = String(text == null ? '' : text);
+  s = s.replace(/\[Image attached at: ([^\]\n]+)\]/g, (m, p) => '\n' + stash(imgTag(p)) + '\n');
+  s = s.replace(/@image:(?:`([^`\n]+)`|"([^"\n]+)"|'([^'\n]+)'|([^\s\n]+))/g,
+    (m, a, b, c, d) => stash(imgTag(a || b || c || d)));
+  s = s.replace(/@file:(?:`([^`\n]+)`|"([^"\n]+)"|'([^'\n]+)'|([^\s\n]+))/g,
+    (m, a, b, c, d) => stash(fileTag(a || b || c || d)));
+  s = s.replace(/\[screenshot\]/g, '').replace(/\[image\]/g, '\u0000IM\u0000');
+  s = esc(s).replace(/\n/g, '<br>');
+  s = s.replace(/(?:<br>)*\u0000I(\d+)\u0000(?:<br>)*/g, (m, n) => imgs[+n] || '');
+  s = s.replace(/\u0000IM\u0000/g, '<span class="imgmiss">🖼 图片未同步</span>');
+  return s.replace(/(?:\s*<br>\s*)+$/,'');
+}
+// 点击放大：默认适应屏幕，点一下图切成原始尺寸（可拖动细看），再点回适应；点黑底才关。
+// 以前是「点任意处就关 + 只能缩小」，615 宽的图在 390 视口里被压成 390，长截图更只剩一百多像素宽。
+msgsEl.addEventListener('click', ev => {
+  const im = ev.target.closest && ev.target.closest('img.hi');
+  if (!im) return;
+  openLightbox(im.src);
+});
+let lbZoom = false;
+function openLightbox(src){
+  lbImg.src = src;
+  lbZoom = false;
+  lightbox.classList.remove('zoom');
+  lightbox.classList.add('on');
+  try { lightbox.scrollTop = 0; lightbox.scrollLeft = 0; } catch(e){}
+}
+function closeLightbox(){
+  lightbox.classList.remove('on');
+  lightbox.classList.remove('zoom');
+  lbZoom = false;
+  lbImg.removeAttribute('src');
+}
+lbImg.addEventListener('click', ev => {
+  ev.stopPropagation();          // 别让它冒泡成「点黑底关掉」
+  lbZoom = !lbZoom;
+  lightbox.classList.toggle('zoom', lbZoom);
+  if (lbZoom) { try { lightbox.scrollTop = 0; lightbox.scrollLeft = 0; } catch(e){} }
+});
+lightbox.addEventListener('click', closeLightbox);
+// 加载失败 → 折叠成提示
+// 记住真实尺寸，供 imgTag 下次预留空间。load 不冒泡，但捕获阶段能拿到。
+msgsEl.addEventListener('load', ev => {
+  const im = ev.target;
+  if (!im || im.tagName !== 'IMG' || !im.classList || !im.classList.contains('hi')) return;
+  const src = im.getAttribute('src') || '';
+  const i = src.indexOf('path=');
+  if (i < 0) return;
+  let p = '';
+  try { p = decodeURIComponent(src.slice(i + 5)); } catch (e) { return; }
+  IMGDIM.set(p, im.naturalWidth, im.naturalHeight);
+}, true);
+msgsEl.addEventListener('error', ev => {
+  const im = ev.target;
+  if (!im || !im.classList || !im.classList.contains('hi')) return;
+  im.classList.add('broken');
+  if (!im.dataset.missed){
+    im.dataset.missed = '1';
+    const sp = document.createElement('span');
+    sp.className = 'imgmiss';
+    sp.textContent = '🖼 ' + (im.alt || '图片') + ' 未同步到手机端';
+    im.insertAdjacentElement('afterend', sp);
+  }
+}, true);
+
+function md(src){
+  if (!src) return '';
+  // 链接目标要看是不是在 APK 壳里：WebView 的 setSupportMultipleWindows 默认 true，
+  // target="_blank" 走 onCreateWindow，而壳里没实现它 —— 链接会被直接丢弃，连
+  // shouldOverrideUrlLoading 都到不了（那儿才是「站内留壳 / 外链交给系统浏览器」）。
+  // 浏览器里反过来：必须 _blank，否则整页被导航走，当前会话就没了。
+  // 放在函数里而不是模块级常量：verify_all 会把 md() 单独抽出来跑，抽不到外部常量。
+  const A_TGT = (typeof window !== 'undefined' && window.HermesApp) ? '' : ' target="_blank"';
+  const blocks = [];
+  let s = String(src);
+  // fenced code first
+  s = s.replace(/```([\w+#.\-]*)\r?\n?([\s\S]*?)```/g, (m, lang, code) => {
+    const lg = (lang || '').trim().toLowerCase();
+    blocks.push('<pre' + (lg ? ' data-lang="' + esc(lg) + '"' : '') + '><code>' +
+                esc(code.replace(/\s+$/, '')) + '</code></pre>');
+    return '\u0000B' + (blocks.length - 1) + '\u0000';
+  });
+  // 图片：抽出成占位，避免被 esc 与后续 markdown 规则破坏
+  const imgs = [];
+  const stash = html => { imgs.push(html); return '\u0000I' + (imgs.length - 1) + '\u0000'; };
+  s = s.replace(/\[Image attached at: ([^\]\n]+)\]/g, (m, p) => '\n' + stash(imgTag(p)) + '\n');
+  s = s.replace(/@image:(?:`([^`\n]+)`|"([^"\n]+)"|'([^'\n]+)'|([^\s\n]+))/g,
+    (m, a, b, c, d) => stash(imgTag(a || b || c || d)));
+  // 非图片附件：@file:<path>（含反引号/引号包裹的带空格路径）
+  s = s.replace(/@file:(?:`([^`\n]+)`|"([^"\n]+)"|'([^'\n]+)'|([^\s\n]+))/g,
+    (m, a, b, c, d) => stash(fileTag(a || b || c || d)));
+  s = s.replace(/\[image\]/g, () => stash('<span class="imgmiss">🖼 图片未同步</span>'));
+  s = esc(s);
+  // tables: header | --- | body
+  s = s.replace(/^([ \t]*\|[^\n]*\|[ \t]*)\r?\n([ \t]*\|[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|[ \t]*)\r?\n((?:[ \t]*\|[^\n]*\|[ \t]*(?:\r?\n|$))*)/gm,
+    (m, head, _sep, body) => {
+      // 单元格切分不能把 `a | b` 里的竖线当分隔符：按反引号状态走一遍
+      const cut = r => {
+        const t = r.trim().replace(/^\|/, '').replace(/\|$/, '');
+        const out = []; let cur = '', tick = false;
+        for (let i = 0; i < t.length; i++){
+          const ch = t[i];
+          if (ch === '`'){ tick = !tick; cur += ch; }
+          else if (ch === '|' && !tick){ out.push(cur.trim()); cur = ''; }
+          else cur += ch;
+        }
+        out.push(cur.trim());
+        return out;
+      };
+      const h = cut(head);
+      if (!h.length) return m;
+      const rows = body.split(/\r?\n/).map(x => x.trim()).filter(x => x && x.indexOf('|') >= 0);
+      let t = '<table><thead><tr>' + h.map(c => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>';
+      for (const r of rows){
+        const cs = cut(r);
+        t += '<tr>' + h.map((_, i) => '<td>' + (cs[i] || '') + '</td>').join('') + '</tr>';
+      }
+      return t + '</tbody></table>';
+    });
+  s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+  s = s.replace(/~~([^~\n]+)~~/g, '<s>$1</s>');
+  s = s.replace(/(^|[\s(（])_([^_\n]+)_(?=$|[\s)）,.!?，。！？])/g, '$1<i>$2</i>');
+  s = s.replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<i>$2</i>');
+  // markdown 链接先用占位符抽走，否则下面的裸 URL 规则会把 href 里的地址再包一层 <a>。
+  const links = [];
+  s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s()]*(?:\([^\s()]*\)[^\s()]*)*)\)/g, (m, txt, url) => {
+    links.push('<a href="' + url + '"' + A_TGT + ' rel="noreferrer">' + txt + '</a>');
+    return '\u0000L' + (links.length - 1) + '\u0000';
+  });
+  // 裸 URL：模型经常直接吐地址，不套 markdown。
+  // 只吃 RFC3986 允许的 ASCII：以前是 [^\s<>"'`]，中文紧贴着地址时会被整段吞进链接
+  // （实测「https://a.com/a?b=1&c=2，完」→ href 里带着「，完」，点开 404，后面那截字还变成链接）。
+  // 尾部标点照旧剥，但括号要配对 —— 维基那种 .../Foo_(bar) 的右括号是地址的一部分。
+  s = s.replace(/(https?:\/\/[A-Za-z0-9\-._~:\/?#\[\]@!$&'()*+,;=%]+)/g, (m, url) => {
+    let t = url;
+    for (;;){
+      const b = t;
+      t = t.replace(/[.,;:!?'"]+$/, '');
+      const close = (t.match(/\)/g) || []).length, open = (t.match(/\(/g) || []).length;
+      if (t.slice(-1) === ')' && close > open) t = t.slice(0, -1);
+      if (t === b) break;
+    }
+    if (t.length < 10) return m;
+    return '<a href="' + t + '"' + A_TGT + ' rel="noreferrer">' + t + '</a>' + url.slice(t.length);
+  });
+  s = s.replace(/^#### (.+?)\s*#*$/gm, '<h3>$1</h3>').replace(/^### (.+?)\s*#*$/gm, '<h3>$1</h3>')
+       .replace(/^## (.+?)\s*#*$/gm, '<h2>$1</h2>').replace(/^# (.+?)\s*#*$/gm, '<h1>$1</h1>');
+  s = s.replace(/(?:^&gt;[ \t]?.*(?:\r?\n|$))+/gm, m => {
+    const rows = m.replace(/\s+$/, '').split(/\r?\n/).map(l => l.replace(/^&gt;[ \t]?/, ''));
+    return '<blockquote>' + rows.join('<br>') + '</blockquote>';
+  });
+  // ---- hr
+  s = s.replace(/^[ \t]*(-{3,}|\*{3,}|_{3,})[ \t]*$/gm, '<hr>');
+  // 缩进 → 层级。以前只有 sub / sub2 两档，三层以上的列表全塌成同一缩进（实测 4/6/8/12
+  // 空格的条目 margin-left 全是 32px，层级信息直接丢了）。2 空一级、4 空两级、≥8 空三级。
+  // 定义在函数体内：verify_all 把 md() 单独抽出来跑，模块级常量抽不到。
+  const indCls = ind => ind.length >= 8 ? ' sub sub2 sub3' : ind.length >= 4 ? ' sub sub2' : ind.length >= 2 ? ' sub' : '';
+  // 任务列表要排在普通 - 之前，否则 "- [ ] x" 会被当普通条目，字面量 [ ] 留在正文里。
+  s = s.replace(/^([ \t]*)[-*][ \t]+\[([ xX])\][ \t]+(.+)$/gm,
+    (m, ind, ck, t) => '<li class="task' + (ck === 'x' || ck === 'X' ? ' done' : '') + indCls(ind) + '">' + t + '</li>');
+  // list items (unordered + ordered, 2-space indent = one visibly nested level)
+  s = s.replace(/^([ \t]*)[-*][ \t]+(.+)$/gm,
+    (m, ind, t) => '<li' + (indCls(ind) ? ' class="' + indCls(ind).trim() + '"' : '') + '>' + t + '</li>');
+  // 有序列表要记住起始号：5. 6. 不写 start 会被渲染成 1. 2.
+  s = s.replace(/^([ \t]*)(\d+)\.[ \t]+(.+)$/gm,
+    (m, ind, num, t) => '<li class="o' + indCls(ind) + '" data-n="' + num + '">' + t + '</li>');
+  s = s.replace(/(?:<li class="task[^"]*">[\s\S]*?<\/li>[ \t]*\r?\n?)+/g, m => '<ul class="tasks">' + m + '</ul>\n');
+  s = s.replace(/(?:<li class="o[^"]*"[^>]*>[\s\S]*?<\/li>[ \t]*\r?\n?)+/g, m => {
+    const f = m.match(/data-n="(\d+)"/);
+    return '<ol' + (f && +f[1] > 1 ? ' start="' + f[1] + '"' : '') + '>' + m + '</ol>\n';
+  });
+  s = s.replace(/(?:<li(?: class="sub(?: sub2)?(?: sub3)?")?>[\s\S]*?<\/li>[ \t]*\r?\n?)+/g, m => '<ul>' + m + '</ul>\n');
+  // paragraphs
+  s = s.split(/\n{2,}/).map(p => {
+    const t = p.trim();
+    if (!t) return '';
+    if (/^<(pre|ul|ol|h1|h2|h3|li|table|hr|blockquote|\u0000)/.test(t) || /\u0000B/.test(t)) return t;
+    return '<p>' + t.replace(/\n/g, '<br>') + '</p>';
+  }).join('');
+  s = s.replace(/\u0000B(\d+)\u0000/g, (m, i) => blocks[+i] || '');
+  s = s.replace(/\u0000L(\d+)\u0000/g, (m, i) => links[+i] || '');
+  s = s.replace(/\u0000I(\d+)\u0000/g, (m, i) => imgs[+i] || '');
+  return s;
+}
+
+function nearBottom(){ return scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 120; }
+function toBottom(force){ if (force || S.autoScroll) scroll.scrollTop = scroll.scrollHeight; }
+
+function stamp(){ const d = new Date(); return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0'); }
+
+function fmtTs(ts){
+  if (!ts) return '';
+  const d = new Date(ts * 1000), now = new Date();
+  const hm = d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+  if (d.toDateString() === now.toDateString()) return hm;
+  return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
+}
+
+function fmtSep(ts){
+  const d = new Date(ts * 1000), now = new Date();
+  const hm = d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (d.toDateString() === now.toDateString()) return hm;
+  if (d.toDateString() === y.toDateString()) return '昨天 ' + hm;
+  if (d.getFullYear() === now.getFullYear()) return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
+  return d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
+}
+
+function setConn(text, bad){
+  if (!text){ conn.classList.remove('on'); return; }
+  conn.textContent = text;
+  conn.classList.add('on');
+  conn.classList.toggle('bad', !!bad);
+}
+let connTimer = null;
+function flashConn(text, bad){
+  setConn(text, bad);
+  clearTimeout(connTimer);
+  connTimer = setTimeout(() => setConn(''), 2600);
+}
+
+/* ---------- 报错人话化 ---------- */
+function friendlyErr(method, msg){
+  const raw = String(msg == null ? '' : msg).trim();
+  const m = raw.toLowerCase();
+  if (!raw) return '出错了';
+  if (/failed to fetch|networkerror|network error|load failed|net::err|err_internet|err_connection/.test(m))
+    return '连不上电脑：确认电脑上 start.cmd 窗口还开着，手机和电脑在同一网络';
+  if (/gateway is running a turn|already running|running a turn in this/.test(m))
+    return '电脑端正在跑这一轮，等它跑完再发';
+  if (/approval.*timeout|approval timed out/.test(m))
+    return '审批等待超时，那条命令没有执行';
+  if (/timed? ?out|超时/.test(raw))
+    return '网关没响应（' + (method || 'RPC') + ' 超时），点「重发」再试一次';
+  if (/not connected|未连接|websocket is not open/.test(raw))
+    return '连接断了，正在自动重连…';
+  if (/\b401\b|unauthoriz|forbidden|login required/.test(m))
+    return '登录过期了，刷新页面重新登录';
+  if (/\b429\b|rate limit/.test(m))
+    return '请求太频繁，等几秒再发';
+  if (/\b50[234]\b|bad gateway|temporarily unavailable/.test(m))
+    return '网关暂时不可用，稍后重试';
+  if (/payload too large|too large|413/.test(m))
+    return '内容太大了，拆小一点再发';
+  return raw;
+}
+
+function attachRetry(ev, text){
+  if (!ev || !ev.row) return;
+  const old = ev.row.querySelector('.retry');
+  if (old) old.remove();
+  const b = document.createElement('button');
+  b.className = 'retry';
+  b.textContent = '↻ 重发';
+  b.onclick = () => {
+    b.remove();
+    // 那条失败的 user 气泡也一起去掉，否则重发之后列表里会有两条一模一样的提问
+    if (ev.row && ev.row.parentNode) ev.row.remove();
+    ta.value = text;
+    autoGrow();
+    syncSendBtn();
+    send();
+  };
+  ev.row.appendChild(b);
+}
+
+/* ---------- message rendering ---------- */
+/* 建一行但不挂到列表上：增量翻页要先把一段消息建成 DocumentFragment 再整体插入，
+   挂载动作留给调用方（makeRow → 自己 appendChild / buildChunk → frag）。 */
+function makeRow(role, html, meta){
+  const row = document.createElement('div');
+  row.className = 'row ' + role;
+  const b = document.createElement('div');
+  b.className = 'bubble';
+  b.innerHTML = html;
+  row.appendChild(b);
+  if (meta){ const m = document.createElement('div'); m.className = 'meta'; m.textContent = meta; row.appendChild(m); }
+  return {row, body: b};
+}
+
+function addRow(role, html, meta){
+  const ev = makeRow(role, html, meta);
+  msgsEl.appendChild(ev.row);
+  toBottom(false);
+  return ev;
+}
+
+function addUser(text){
+  const ev = addRow('user', userHTML(text), stamp());
+  S.autoScroll = true;
+  return ev;
+}
+
+function startAssistant(){
+  if (S.cur) return S.cur;
+  S.cur = addRow('assistant', '<span class="cursor"></span>', '');
+  S.cur.text = '';
+  return S.cur;
+}
+
+/* 流式重绘：短回答每帧重跑 md() 很便宜（16 KB ≈ 0.35 ms，Node 实测），
+   但长回答是 O(n²)——每帧全文重解析再重设 innerHTML，手机上会掉帧。
+   超过 RENDER_BIG 字符改成 120 ms 一次，并用尾随定时器保证最后一帧不丢。 */
+const RENDER_BIG = 8192, RENDER_MS = 120;
+let renderTimer = 0, renderAt = 0;
+
+function paintCur(){
+  const c = S.cur;
+  if (!c) return;
+  c.body.innerHTML = md(c.text) + '<span class="cursor"></span>';
+  if (nearBottom()) toBottom(true);
+  else { unread++; syncUnread(); }
+}
+
+function appendAssistant(delta){
+  const cur = startAssistant();
+  cur.text += delta;
+  if (cur.text.length > RENDER_BIG){
+    if (renderTimer) return;
+    const wait = Math.max(0, RENDER_MS - (Date.now() - renderAt));
+    renderTimer = setTimeout(() => {
+      renderTimer = 0; renderAt = Date.now();
+      if (!rafPending) paintCur();
+    }, wait);
+    return;
+  }
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => { rafPending = false; paintCur(); });
+}
+
+// 断线时把没说完的那半截收尾。不清的话 S.cur 和光标一直挂着，S.streaming 永远 true ——
+// send() 第一行就静默 return，重连之后照样发不出去，界面上一点提示都没有。
+function abortStream(why){
+  if (renderTimer){ clearTimeout(renderTimer); renderTimer = 0; }
+  if (S.think){ S.think.remove(); S.think = null; }
+  const cur = S.cur;
+  if (cur){
+    if (cur.text){
+      cur.body.innerHTML = md(cur.text);
+      decorateCode(cur.body);
+      const m = document.createElement('div');
+      m.className = 'meta';
+      m.textContent = stamp() + ' · ' + (why || '已中断');
+      cur.row.appendChild(m);
+    } else if (cur.row.parentNode){ cur.row.remove(); }
+  }
+  S.cur = null; S.streaming = false; S.turnStart = 0;
+  syncSub(); syncSendBtn();
+}
+
+function finishAssistant(finalText){
+  if (renderTimer){ clearTimeout(renderTimer); renderTimer = 0; }   // 别让节流的尾帧在收尾后又补一次
+  const cur = S.cur || startAssistant();
+  if (S.think){ S.think.remove(); S.think = null; }
+  if (typeof finalText === 'string' && finalText.length) cur.text = finalText;
+  if (!cur.text){ if (cur.row.parentNode) cur.row.remove(); S.cur = null; S.streaming = false; setSendEnabled(true); return; }
+  cur.body.innerHTML = md(cur.text);
+  decorateCode(cur.body);
+
+  const dt = S.turnStart ? (Date.now() - S.turnStart) / 1000 : 0;
+  let metaEl;
+  if (cur.row.lastChild && cur.row.lastChild.className === 'meta') metaEl = cur.row.lastChild;
+  else { metaEl = document.createElement('div'); metaEl.className = 'meta'; cur.row.appendChild(metaEl); }
+  const baseMeta = stamp() + (dt ? ' · ' + dt.toFixed(1) + 's' : '');
+  metaEl.textContent = baseMeta;
+
+  S.cur = null; S.think = null; S.streaming = false;
+  S.turnStart = 0;
+  setSendEnabled(true);
+  scrollEnd();
+
+  // token/tps fills in once the server's usage counters settle
+  if (dt > 0 && S.sid){
+    const before = S.lastOutput || 0;
+    const genS = S.firstDeltaAt ? (Date.now() - S.firstDeltaAt) / 1000 : 0;
+    rpc('session.usage', {session_id: S.sid}, 15000).then(u => {
+      const out = Number(u && u.output) || 0;
+      const delta = Math.max(0, out - before);
+      S.lastOutput = out;
+      S.usage = u || null;
+      const tps = (genS > 0.25 && delta > 0) ? (delta / genS) : 0;
+      metaEl.textContent = baseMeta +
+        (delta ? ' · ' + delta + ' tok' : '') +
+        (tps ? ' · ' + (tps >= 10 ? tps.toFixed(0) : tps.toFixed(1)) + ' tok/s' : '');
+      syncSub();
+    }).catch(() => {});
+  }
+  // 本轮落地：把 user+assistant 并进本地历史缓存。少了这一步，手机上聊一轮就等于
+  // 把这份缓存作废（message_count 变了、缓存的 n 没变），下次进来又拉一遍全量。
+  rememberTurn(S.turnUserText, cur.text, S.turnMedia);
+  S.turnUserText = ''; S.turnMedia = false;
+  S.firstDeltaAt = 0;
+}
+
+function scrollEnd(){ setTimeout(() => toBottom(true), 30); }
+
+/* attach a copy button to every <pre> code block inside root */
+function decorateCode(root){
+  if (!root || !root.querySelectorAll) return;
+  const blocks = root.querySelectorAll('pre:not([data-cc])');
+  for (const pre of blocks){
+    pre.setAttribute('data-cc', '1');
+    // 包一层 .prewrap，按钮挂在外层：pre 横向滚动时按钮不动，pre 的 innerText 也不含「复制」
+    const wrap = document.createElement('div');
+    wrap.className = 'prewrap';
+    if (pre.parentNode) {
+      pre.parentNode.insertBefore(wrap, pre);
+      wrap.appendChild(pre);
+    }
+    const b = document.createElement('button');
+    b.className = 'cc';
+    b.textContent = '复制';
+    b.onclick = e => {
+      e.stopPropagation();
+      const code = pre.querySelector('code');
+      copyText((code || pre).innerText || '');
+    };
+    wrap.appendChild(b);
+  }
+}
+
+const TOOLS = {};
+function argPretty(a){
+  if (a == null) return '';
+  if (typeof a !== 'object') return String(a);
+  const ks = Object.keys(a);
+  if (!ks.length) return '';
+  const one = v => (typeof v === 'string' ? v : JSON.stringify(v));
+  if (ks.length === 1) return one(a[ks[0]]);
+  return ks.slice(0, 4).map(k => k + '=' + one(a[k])).join('  ');
+}
+function startTool(p){
+  const el = document.createElement('div');
+  el.className = 'tool';
+  const nm = p.name || 'tool';
+  const argTxt = p.preview || p.args_text || argPretty(p.args);
+  const short = argTxt ? String(argTxt).replace(/\s+/g, ' ').trim().slice(0, 60) : '';
+  el.innerHTML =
+    '<div class="th"><span class="arw">▸</span><span class="tn">' + esc(nm) + '</span>' +
+    (short ? '<span class="tp">' + esc(short) + '</span>' : '') +
+    '<span class="ts">运行中</span></div>' +
+    (argTxt ? '<div class="tb">' + esc(String(argTxt).slice(0, 900)) + '</div>' : '');
+  const th = el.querySelector('.th');
+  th.onclick = () => el.classList.toggle('open');
+  msgsEl.appendChild(el);
+  if (p.tool_id) TOOLS[p.tool_id] = el;
+  if (nearBottom()) toBottom(true);
+}
+
+function doneTool(p){
+  const el = p.tool_id ? TOOLS[p.tool_id] : null;
+  if (!el) return;
+  el.classList.add('ok');
+  const st = el.querySelector('.ts');
+  if (st) st.textContent = '完成';
+  if (p.summary){
+    const b = document.createElement('div');
+    b.className = 'tr';
+    b.textContent = String(p.summary).slice(0, 1200);
+    el.appendChild(b);
+  }
+  delete TOOLS[p.tool_id];
+  if (nearBottom()) toBottom(true);
+}
+
+function thinkTick(){
+  if (!S.think){
+    S.think = document.createElement('div');
+    S.think.className = 'thinking';
+    S.think.textContent = '思考中…';
+    msgsEl.appendChild(S.think);
+  }
+  if (nearBottom()) toBottom(true);
+}
+
+function clearMsgs(){ msgsEl.innerHTML = ''; S.cur = null; S.think = null; for (const k in TOOLS) delete TOOLS[k]; clearApprovals(); clearAttaches(); }
+
+/* ---------- rpc ---------- */
+function rpc(method, params, timeoutMs){
+  return new Promise((resolve, reject) => {
+    if (!S.ws || S.ws.readyState !== 1) return reject(new Error('未连接'));
+    const id = ++S.rpcSeq;
+    const to = setTimeout(() => {
+      if (S.pending.has(id)) { S.pending.delete(id); reject(new Error('超时: ' + method)); }
+    }, timeoutMs || 30000);
+    S.pending.set(id, {resolve, reject, to});
+    S.ws.send(JSON.stringify({jsonrpc:'2.0', id, method, params: params || {}}));
+  });
+}
+
+async function wsTicket(){
+  const r = await fetchT('/api/auth/ws-ticket', {method:'POST', credentials:'same-origin'}, 10000);
+  if (!r.ok) throw new Error('ticket ' + r.status);
+  return (await r.json()).ticket;
+}
+
+/* ---------- 审批：server→client request ---------- */
+const APV_LABEL = {once:'批准', session:'本会话都批准', always:'总是批准', deny:'拒绝'};
+const APV_CLS = {once:'ok', session:'', always:'', deny:'deny'};
+
+function apvFind(id){
+  if (!id) return null;
+  return Array.from(approveEl.children).find(x => x.dataset.id === id) || null;
+}
+function hideApproval(id){
+  const el = apvFind(id);
+  if (el) el.remove();
+  if (!approveEl.children.length) approveEl.classList.remove('on');
+}
+function clearApprovals(){
+  approveEl.innerHTML = '';
+  approveEl.classList.remove('on');
+}
+
+// clarify：agent 在问你。原来这里一律回 -32601，模型收到的是 outcome:"cancelled"
+// （= 你主动取消了），于是自己拍板往下走 —— 等于手机端把提问吞了。
+function showClarify(id, p){
+  if (!approveEl) return;
+  const qs = Array.isArray(p && p.questions) ? p.questions : [];
+  if (!qs.length) return;
+  const key = String(id);
+  if (apvFind(key)) return;
+  const answers = {};
+  let left = qs.length;
+  const el = document.createElement('div');
+  el.className = 'apv';
+  el.dataset.id = key;
+  el.innerHTML = '<div class="ah"><b>❓ 需要你回答</b><span class="n">' + qs.length + ' 个问题</span></div>';
+  const finish = () => {
+    if (left > 0) return;
+    try {
+      if (S.ws && S.ws.readyState === 1){
+        S.ws.send(JSON.stringify({jsonrpc:'2.0', id: id,
+          result: {answers: answers, outcome: 'submitted'}}));
+      }
+    } catch(e){}
+    hideApproval(key);
+  };
+  qs.forEach((q, i) => {
+    const qid = q.qid || ('q' + i);
+    const box = document.createElement('div');
+    box.className = 'cq';
+    const t = document.createElement('div');
+    t.className = 'ad';
+    t.textContent = String(q.question || '(无题面)');
+    box.appendChild(t);
+    const bar = document.createElement('div');
+    bar.className = 'ab';
+    const settle = val => {
+      if (box.dataset.done) return;
+      box.dataset.done = '1';
+      answers[qid] = val;
+      left--;
+      for (const b of bar.querySelectorAll('button')) b.disabled = true;
+      if (q.multi_select) toast('多选只记了第一项');
+      finish();
+    };
+    const choices = Array.isArray(q.choices) ? q.choices : [];
+    if (choices.length){
+      for (const c of choices){
+        const b = document.createElement('button');
+        b.textContent = String(c);
+        b.onclick = () => settle(String(c));
+        bar.appendChild(b);
+      }
+    } else {
+      const inp = document.createElement('input');
+      inp.className = 'cin';
+      inp.placeholder = '输入回答…';
+      const go = document.createElement('button');
+      go.className = 'ok';
+      go.textContent = '回答';
+      go.onclick = () => { const v = String(inp.value || '').trim(); if (v) settle(v); };
+      bar.appendChild(inp); bar.appendChild(go);
+    }
+    box.appendChild(bar);
+    el.appendChild(box);
+  });
+  approveEl.appendChild(el);
+  approveEl.classList.add('on');
+  haptic(18);
+}
+
+function showApproval(id, p){
+  if (!approveEl) return;
+  p = p || {};
+  const rid = p.request_id || p.requestId || '';
+  const key = id || ('r:' + rid);
+  if (!key || key === 'r:') return;
+  if (apvFind(key)) return;   // 已显示
+  const cmd = String(p.command || p.description || '(命令)');
+  const desc = (p.description && String(p.description) !== cmd) ? String(p.description) : '';
+  const choices = (Array.isArray(p.choices) && p.choices.length) ? p.choices : ['once','session','always','deny'];
+  let h = '<div class="ah"><b>⚠ 需要你批准</b><span class="n">' +
+          esc(String(p.surface || '工具调用')) + '</span></div>' +
+          '<div class="ac">' + esc(cmd) + '</div>' +
+          (desc ? '<div class="ad">' + esc(desc) + '</div>' : '') + '<div class="ab">';
+  for (const c of choices){
+    h += '<button class="' + (APV_CLS[c] || '') + '" data-c="' + esc(c) + '">' +
+         (APV_LABEL[c] || esc(c)) + '</button>';
+  }
+  h += '</div>';
+  const el = document.createElement('div');
+  el.className = 'apv';
+  el.dataset.id = key;
+  el.dataset.rid = rid;
+  el.innerHTML = h;
+  el.addEventListener('click', ev => {
+    const b = ev.target.closest && ev.target.closest('button[data-c]');
+    if (!b) return;
+    respondApproval(key, b.dataset.c);
+  });
+  approveEl.appendChild(el);
+  approveEl.classList.add('on');
+  haptic(30);
+}
+
+async function respondApproval(key, choice){
+  const el = apvFind(key);
+  if (el) el.querySelectorAll('button').forEach(b => b.disabled = true);
+  const rid = el ? el.dataset.rid : '';
+  const srq = (key.indexOf('r:') === 0) ? '' : key;
+  hideApproval(key);   // 乐观移除：不让按钮卡在「已点但没反应」
+  haptic(18);
+  if (srq && S.ws && S.ws.readyState === 1){
+    try { S.ws.send(JSON.stringify({jsonrpc:'2.0', id: srq, result:{choice}})); return; } catch(e){}
+  }
+  if (rid && S.sid){
+    try {
+      await rpc('approval.respond', {session_id: S.sid, choice, request_id: rid}, 15000);
+      return;
+    } catch(e){
+      toast('回复审批失败：' + friendlyErr('approval.respond', e.message));
+      return;
+    }
+  }
+  toast('审批没发出去：连接断了，等重连后它会自己回来');
+}
+
+// 服务器→客户端请求入口
+function handleServerRequest(fr){
+  const m = fr.method, p = fr.params || {};
+  if (m === 'approval'){
+    if (!S.sid || !p.session_id || p.session_id === S.sid) showApproval(fr.id, p);
+    else showApproval(fr.id, p);  // 网关只发给本会话，收下即可
+    return;
+  }
+  if (m === 'clarify'){ showClarify(fr.id, p); return; }
+  // 其余（sudo / 密钥 / 预览等）手机端不处理：立刻回 -32601，后端会快速撤回而不是干等超时
+  try {
+    if (S.ws && S.ws.readyState === 1){
+      S.ws.send(JSON.stringify({jsonrpc:'2.0', id: fr.id,
+        error:{code:-32601, message:'mobile client does not handle ' + m}}));
+    }
+  } catch(e){}
+}
+
+// resume / activate 快照里的未答请求
+function replayServerRequests(res){
+  if (!res) return;
+  const oq = res.open_requests;
+  if (Array.isArray(oq)){
+    for (const r of oq){
+      if (!r || !r.id) continue;
+      if (r.method === 'approval') showApproval(r.id, r.params || {});
+      else if (r.method === 'clarify') showClarify(r.id, r.params || {});
+    }
+  }
+  // 请求帧丢失但队列里还有：按 request_id 兜底
+  const pa = res.pending_approval;
+  if (pa && pa.request_id){
+    const has = Array.from(approveEl.children).some(x => x.dataset.rid === pa.request_id);
+    if (!has) showApproval('', pa);
+  }
+}
+
+async function openWs(){
+  const ticket = await wsTicket();
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  await new Promise((resolve, reject) => {
+    const ws = new WebSocket(proto + '://' + location.host + '/api/ws?ticket=' + encodeURIComponent(ticket));
+    S.ws = ws;
+    // 三个 handler 都先认身份：手点「重新连接」或超时重建时，旧 socket 的 close 会晚到一步，
+    // 不认身份它就会把 S.ws 置空（新 socket 明明连着，页面却以为断了、rpc 全 reject），
+    // 旧 socket 迟到的帧也会被当成当前会话的事件画出来。
+    ws.onopen = () => {
+      if (S.ws !== ws) return;
+      S.retries = 0;
+      reconnTries = 0;
+      S.lastFrameAt = Date.now();
+      setSendEnabled(true);
+      setConn('已连接');
+      setTimeout(() => setConn(''), 1200);
+      syncSub();
+      // 声明本客户端能回答 server→client 请求（审批）。不发这条，网关会直接放弃推送审批。
+      rpc('client.capabilities', {server_requests: true}, 10000)
+        .then(r => { S.cap = true; }).catch(() => { S.cap = false; });
+      resolve();
+    };
+    ws.onclose = () => {
+      if (S.ws !== ws) return;
+      abortStream('连接中断');      // 先把流式状态收干净，再关发送键
+      setSendEnabled(false);
+      setConn('断线，重连中…', true);
+      S.ws = null;
+      S.cap = false;
+      clearApprovals();
+      scheduleReconnect();
+    };
+    ws.onerror = () => { try { ws.close(); } catch(e){} };
+    ws.onmessage = ev => {
+      if (S.ws !== ws) return;
+      S.lastFrameAt = Date.now();   // 任何一帧都算活着（含 gateway.ping 的 pong）
+      let fr; try { fr = JSON.parse(ev.data); } catch(e){ return; }
+      if (fr.id != null && S.pending.has(fr.id)){
+        const p = S.pending.get(fr.id); S.pending.delete(fr.id); clearTimeout(p.to);
+        if (fr.error) p.reject(new Error(fr.error.message || JSON.stringify(fr.error)));
+        else p.resolve(fr.result || {});
+        return;
+      }
+      // 服务器→客户端请求（有 id、有 method）——不是我们发的，是后端在问
+      if (fr.method && fr.id != null){ handleServerRequest(fr); return; }
+      const params = fr.params || {};
+      if (fr.method === 'event' || params.type) onEvent(params);
+    };
+    setTimeout(() => { if (ws.readyState !== 1) reject(new Error('握手超时')); }, 12000);
+  });
+}
+
+function syncSub(){
+  $('#ttlMain').textContent = S.title || 'Hermes';
+  let sub;
+  if (S.streaming) sub = '回复中…';
+  else if (S.storedId) sub = '已接续电脑端会话';
+  else sub = '点 ☰ 选一个会话';
+  const u = S.usage || {};
+  const bits = [];
+  if (u.model) bits.push(u.model);
+  if (u.total) bits.push(fmtTok(u.total) + ' tok');
+  if (u.avg_tps) bits.push((u.avg_tps >= 10 ? Math.round(u.avg_tps) : u.avg_tps.toFixed(1)) + ' tok/s');
+  if (bits.length) sub = bits.join(' · ');
+  $('#ttlSub').textContent = sub;
+}
+
+/* ---------- events ---------- */
+function onEvent(p){
+  const t = p.type, d = p.payload || {};
+  // 带 session_id 的事件只画当前会话的。以前条件里带 S.sid：S.sid 还没落（没开会话 /
+  // resume 失败）时任何会话的事件都放行 —— 后台 cron 或电脑端正在跑的那条会把内容
+  // 流进这块空屏。全局事件（sessions.changed / session.title）例外。
+  if (p.session_id && t !== 'session.title' && t !== 'sessions.changed' && p.session_id !== S.sid) return;
+  switch(t){
+    case 'message.start': S.streaming = true; S.turnStart = Date.now(); S.firstDeltaAt = 0; syncSendBtn(); if (S.think) { S.think.remove(); S.think = null; } startAssistant(); break;
+    case 'message.delta': if (!S.firstDeltaAt) S.firstDeltaAt = Date.now(); if (typeof d.text === 'string') appendAssistant(d.text); break;
+    case 'message.interim': if (typeof d.text === 'string') { const c = startAssistant(); c.body.innerHTML = md(d.text); } break;
+    case 'message.complete': finishAssistant(d.text); S.streaming = false; syncSendBtn(); syncSub(); break;
+    case 'thinking.delta':
+    case 'reasoning.delta': thinkTick(); break;
+    case 'tool.start': startTool(d); break;
+    case 'tool.complete': doneTool(d); break;
+    case 'status.update': if (d.text) flashConn(d.text, false); break;
+    case 'session.title': if (d.title && (!S.sid || p.session_id === S.sid)) { S.title = d.title; syncSub(); } break;
+    case 'request.cancel': if (d.id) hideApproval(String(d.id)); break;
+    case 'error': flashConn(friendlyErr('', d.message || '出错了'), true);
+      // 必须把半截气泡收尾：以前只改两个标志位，S.cur 还挂着，下一轮 message.start
+      // 拿到的还是同一个气泡 → 新回答直接拼进上一轮那半截里，中间连分隔都没有。
+      abortStream('出错了'); break;
+    case 'sessions.changed': onSessionsChanged(); break;
+  }
+}
+
+/* ---------- sessions ---------- */
+
+// 网关广播 sessions.changed（state.db 动了）时静默对一次账：
+// 不弹 loading、不打断滚动，抽屉开着就原地重绘
+let sessionsSyncTimer = 0, sessionsSyncing = false, sessionsQueued = false;
+async function refreshSessions(){
+  // 正在拉的时候又来一次，别直接丢掉：sessions.changed 的防抖只给一次机会，
+  // 丢掉就等于这次改动永远看不到（session.list 在慢机器上要十几秒）。
+  if (sessionsSyncing){ sessionsQueued = true; return; }
+  if (!S.ws || S.ws.readyState !== 1) return;
+  sessionsSyncing = true;
+  try {
+    const r = await rpc('session.list', {limit: 200}, 20000);
+    const rows = (r.sessions || r.rows || []).filter(x => x && x.id);
+    if (!rows.length) return;
+    ALL = rows;
+    if (drawer.classList.contains('on')){
+      const top = listEl.scrollTop;
+      renderList();
+      listEl.scrollTop = top;
+    }
+  } catch(e){}
+  finally {
+    sessionsSyncing = false;
+    if (sessionsQueued){ sessionsQueued = false; setTimeout(refreshSessions, 0); }
+  }
+}
+function onSessionsChanged(){
+  if (sessionsSyncTimer) return;
+  sessionsSyncTimer = setTimeout(() => { sessionsSyncTimer = 0; refreshSessions(); }, 1500);
+}
+
+function relTime(ts){
+  if (!ts) return '';
+  const now = Date.now()/1000, d = now - ts;
+  if (d < 90) return '刚刚';
+  if (d < 3600) return Math.round(d/60) + ' 分钟前';
+  if (d < 86400) return Math.round(d/3600) + ' 小时前';
+  if (d < 86400*7) return Math.round(d/86400) + ' 天前';
+  const dt = new Date(ts*1000);
+  return (dt.getMonth()+1) + '/' + dt.getDate();
+}
+
+const SRC_LABEL = {gui:'电脑端', desktop:'电脑端', local:'终端', cli:'终端', tui:'终端',
+  feishu:'飞书', telegram:'TG', discord:'Discord', qqbot:'QQ', cron:'定时', webhook:'钩子'};
+
+let ALL = [], Q = '', SHOWN = 60;
+let SHOW_CRON = false;   // 定时任务(cron)会话默认不出现在列表里
+
+// 抽屉里的日期分组标题已删（见 renderList）：行里没有 updated_at，分组只能拿
+// started_at 硬凑，和「最近活动序」对不上。要恢复分组，得先让 session.list 带上
+// 最后一次活动时间 —— 那是网关契约的改动，别在页面上编。
+
+async function loadSessions(){
+  if (!ALL.length) listEl.innerHTML = '<div class="empty">加载中…</div>';
+  try {
+    const res = await rpc('session.list', {limit: 200}, 25000);
+    ALL = (res.sessions || res.rows || []).filter(r => r && r.id);
+    if (!ALL.length){ listEl.innerHTML = '<div class="empty">还没有会话</div>'; return; }
+    renderList();
+  } catch (e){
+    listEl.innerHTML = '<div class="empty">读取失败：' + esc(friendlyErr('session.list', e.message)) + '</div>';
+  }
+}
+
+function renderList(){
+  const q = Q.trim().toLowerCase();
+  const noCron = SHOW_CRON ? ALL : ALL.filter(r => (r.source || '') !== 'cron');
+  const hiddenCron = ALL.length - noCron.length;
+  // 空会话(0 条消息)不显示，但当前打开的那个除外
+  const pool = noCron.filter(r => (r.message_count || 0) > 0 || r.id === S.storedId);
+  const rows = (q ? pool.filter(r => {
+    const hay = ((r.title || '') + ' ' + (r.preview || '') + ' ' +
+                 (r.display_name || '') + ' ' + (r.source || '')).toLowerCase();
+    return hay.indexOf(q) >= 0;
+  }) : pool).slice();
+  // 不排序：网关的 list_sessions_rich(order_by_last_active=True) 已经按「最近活动」排好，
+  // 而 session.list 的行里根本没有 updated_at（字段只有 id/message_count/preview/source/started_at/title），
+  // 照着 updated_at||started_at 再排一次等于改成按创建时间，会把刚聊过的会话压下去。
+  if (!rows.length){
+    listEl.innerHTML = '<div class="empty">' +
+      (q ? '没有匹配「' + esc(Q) + '」的会话' : '还没有会话') + '</div>';
+    return;
+  }
+  const cut = q ? rows.length : Math.min(SHOWN, rows.length);
+  listEl.innerHTML = '';
+  const cronTotal = ALL.length - ALL.filter(r => (r.source || '') !== 'cron').length;
+  if (cronTotal && !q){
+    const tip = document.createElement('div');
+    tip.className = 'more';
+    tip.textContent = SHOW_CRON
+      ? '显示全部（含 ' + cronTotal + ' 个定时任务）· 点这里只看对话'
+      : '已隐藏 ' + cronTotal + ' 个定时任务 · 点这里显示全部';
+    tip.onclick = () => { SHOW_CRON = !SHOW_CRON; SHOWN = 60; renderList(); };
+    listEl.appendChild(tip);
+  }
+  // 不再插日期分组标题：列表顺序是「最近活动」，而 session.list 的行里没有
+  // updated_at（字段只有 id/message_count/preview/source/started_at/title），
+  // 拿 started_at 分组等于按创建时间切 —— 实测第 0..6 行是 11-19 / 11-20 / 09-22 /
+  // 11-15 / 09-21，组标题会 11月→今天→9月→11月 来回跳。每条 item 自己带相对时间，
+  // 分组标题纯属噪音，删掉。
+  for (let i = 0; i < cut; i++){
+    const r = rows[i];
+    const el = document.createElement('div');
+    el.className = 'item' + (r.id === S.storedId ? ' cur' : '');
+    const src = r.source || r.created_source || '';
+    const nm = (r.title || r.display_name || r.preview || '(未命名)').toString().slice(0, 80);
+    el.innerHTML = '<div class="t"><div class="n">' + esc(nm) + '</div><div class="d">' +
+      esc(relTime(r.updated_at || r.started_at)) + ' · ' + (r.message_count || 0) + ' 条</div></div>' +
+      '<span class="badge ' + esc(src) + '">' + esc(SRC_LABEL[src] || src || '会话') + '</span>';
+    const del = document.createElement('button');
+    del.className = 'del'; del.textContent = '✕'; del.title = '归档';
+    del.onclick = ev => { ev.stopPropagation(); archiveSession(r, nm); };
+    el.appendChild(del);
+    el.onclick = () => { drawer.classList.remove('on'); openSession(r); };
+    listEl.appendChild(el);
+  }
+  if (!q && rows.length > cut){
+    const m = document.createElement('div');
+    m.className = 'more';
+    m.textContent = '显示更多（还有 ' + (rows.length - cut) + ' 个）';
+    m.onclick = () => { SHOWN += 80; renderList(); };
+    listEl.appendChild(m);
+  }
+}
+
+async function archiveSession(r, nm){
+  const label = (nm || r.id).toString().slice(0, 40);
+  if (!confirm('归档「' + label + '」？\n\n从列表移除，消息记录保留，不会删除。')) return;
+  try {
+    await rpc('session.archive', {session_id: r.id, archived: true}, 15000);
+    ALL = ALL.filter(x => x.id !== r.id);
+    if (r.id === S.storedId) S.storedId = null;
+    renderList();
+    toast('已归档');
+  } catch (e){
+    toast('归档失败：' + e.message);
+  }
+}
+
+/* ---------- 会话历史本地缓存 ----------
+   网关的 session.history 不支持分页（实测传 limit:50/200 都被忽略，直接回 0 条），
+   839 条的会话一次要拉 866 KB，resume+history 1.7~4.4 s，手机走 Wi-Fi 更久。
+   所以开过的会话在 IndexedDB 里留一段尾巴：点进去先用它渲染，真数据回来再覆盖。
+   只存文本（最近 400 条，够 renderHistory 的 160 条再留余量），最多 8 个会话，LRU。 */
+const HCACHE = (() => {
+  const DB = 'hermes-mobile', STORE = 'hist', VER = 1, MAX_MSGS = 600, MAX_SESS = 8;
+  const idb = (typeof window !== 'undefined' && window.indexedDB) || null;   // DOM shim 里没有 → 整段自动降级
+  let dbp = null;
+  function open(){
+    if (!idb) return Promise.resolve(null);
+    if (dbp) return dbp;
+    dbp = new Promise(res => {
+      let req;
+      try { req = idb.open(DB, VER); } catch(e){ return res(null); }
+      req.onupgradeneeded = () => { const d = req.result; if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE); };
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => res(null);
+      req.onblocked = () => res(null);
+    });
+    return dbp;
+  }
+  function tx(mode, fn){
+    return open().then(d => {
+      if (!d) return null;
+      return new Promise(res => {
+        let out = null;
+        try {
+          const t = d.transaction(STORE, mode);
+          const r = fn(t.objectStore(STORE));
+          if (r) r.onsuccess = () => { out = r.result; };
+          t.oncomplete = () => res(out);
+          t.onerror = () => res(null);
+          t.onabort = () => res(null);
+        } catch(e){ res(null); }
+      });
+    });
+  }
+  function tail(list){
+    return (list || [])
+      .filter(m => m && (m.role === 'user' || m.role === 'assistant'))
+      .slice(-MAX_MSGS)
+      .map(m => ({ role: m.role,
+                   text: typeof m.text === 'string' ? m.text : (typeof m.content === 'string' ? m.content : ''),
+                   timestamp: m.timestamp || 0 }))
+      .filter(m => m.text);
+  }
+  async function keys(){ return (await tx('readonly', s => s.getAllKeys())) || []; }
+  return {
+    async get(key){ const v = await tx('readonly', s => s.get(key)); return (v && v.msgs && v.msgs.length) ? v : null; },
+    async put(key, list, n){
+      const msgs = tail(list);
+      if (!msgs.length) return;
+      // n = 写这份缓存时 session.list 给的 message_count；下次点数一样就不必再拉全量
+      await tx('readwrite', s => s.put({ t: Date.now(), msgs, n: n || 0 }, key));
+      const ks = await keys();
+      if (ks.length > MAX_SESS){
+        const ages = [];
+        for (const k of ks){
+          const v = await tx('readonly', s => s.get(k));
+          ages.push({ k, t: (v && v.t) || 0 });
+        }
+        ages.sort((a, b) => a.t - b.t);
+        for (const it of ages.slice(0, ages.length - MAX_SESS)) await tx('readwrite', s => s.delete(it.k));
+      }
+    }
+  };
+})();
+
+let openSeq = 0;   // 快速连点会话时，别让先发后到的旧响应盖掉新开的会话
+
+/* 缓存能不能顶替这次全量拉取：条数信号一致就算命中。
+   老缓存没有 n 字段（命中不了）、会话一条消息都没有（sig=0）都不算命中。 */
+function cacheHitFor(rec, row){
+  const sig = (row && row.message_count) || 0;
+  return !!(rec && rec.n && sig && rec.n === sig);
+}
+async function openSession(row){
+  const seq = ++openSeq;
+  clearMsgs();
+  S.storedId = row.id; S.sid = null; S.title = row.title || row.display_name || '';
+  try { localStorage.setItem('hermes.session', row.id); } catch(e){}
+  loadDraft();          // 切会话就换草稿（旧会话那份已经由 input 事件存进它自己的 key）
+  $('#ttlMain').textContent = S.title || '会话';
+  $('#ttlSub').textContent = '载入中…';
+  setSendEnabled(false);
+  // 先画缓存，别让人盯着空屏等 resume + 全量 history
+  let cacheRec = null;
+  try {
+    cacheRec = await HCACHE.get(row.id);
+    if (seq !== openSeq) return;
+    if (cacheRec){
+      renderHistory(cacheRec.msgs);
+      scrollEnd();
+      $('#ttlSub').textContent = '缓存 ' + relTime(cacheRec.t / 1000) + ' · 同步中…';
+    }
+  } catch(e){}
+  // 缓存里记过「写它时这个会话有多少条」。session.list 的点数没变 = 没有新消息，别拉全量。
+  // （实测 session.list 的 message_count 在 resume/history 前后都是同一个值，不会因为会话变 live 而跳。）
+  const sig = row.message_count || 0;
+  const cacheHit = cacheHitFor(cacheRec, row);
+  try {
+    const res = await rpc('session.resume', {
+      session_id: row.id, source: 'tui', inline_images: false, defer_history: true
+    }, 60000);
+    if (seq !== openSeq) return;
+    S.sid = res.session_id || null;
+    if (res.info && res.info.title) { S.title = res.info.title; }
+    replayServerRequests(res);
+    if (cacheHit){
+      // 命中：界面上已经是这份尾巴了，不再拉 1 MB 的 history。
+      // 顺手核一次列表（26 KB / ~100 ms）：点数真变了再补拉，别把新消息藏起来。
+      syncSub(); setSendEnabled(true); refreshUsage();
+      loadSessions().then(() => {
+        if (seq !== openSeq) return;
+        const now = (ALL.find(x => x.id === row.id) || {}).message_count || 0;
+        if (now && now !== sig) return pullHistory(row.id, seq);
+      }).catch(() => {});
+      return;
+    }
+    await pullHistory(row.id, seq);
+  } catch (e){
+    if (seq !== openSeq) return;
+    $('#ttlSub').textContent = '载入失败';
+    flashConn('载入失败：' + friendlyErr('session.resume', e.message), true);
+    setSendEnabled(!!S.sid);
+  }
+}
+
+/* 拉一次全量历史并落缓存。openSession、重连补拉、开机都走这里，别各写一份。 */
+async function pullHistory(rowId, seq){
+  const h = await rpc('session.history', {session_id: S.sid || rowId}, 60000);
+  if (seq !== openSeq) return;
+  renderHistory(h.messages || [], true);   // 同会话补拉：别把已经翻开的深度缩回 160
+  histPullCount++;                          // 只读计数：测试靠它判断「还有没有在飞的全量」
+  syncSub();
+  // n 用服务端回的 count，不用 ALL 里那份 message_count —— ALL 可能是几分钟前拉的，
+  // 电脑端刚聊过就是过期值；记下一个偏小的 n 会让这份缓存「永远」命中不了。
+  const n = Number(h && h.count) || ((ALL.find(x => x.id === rowId) || {}).message_count || 0);
+  HCACHE.put(rowId, h.messages || [], n);   // 不 await：慢的存储别拖住界面
+  setSendEnabled(true);
+  scrollEnd();
+  refreshUsage();
+}
+
+/* ---------- 缓存续命：把刚聊的这一轮并进去 ----------
+   只靠 pullHistory 写缓存有个死结：手机上聊完一轮，服务端的 message_count 就变了，
+   而缓存里的 n 还是「拉历史那一刻」的值 → 下次点进来必判不命中，又拉 150–500 KB。
+   实测六个会话 resume+history 合计 1.10 MB / 4.3 s，手机上更慢，这个漏洞等于白做缓存。
+   所以每轮收尾把本轮两条并进 histAll，等 sessions.changed 那次防抖列表刷新落地，
+   再按刷新后的 message_count 重写缓存。列表没刷新到就不写 —— 记一个偏小的 n 只会让
+   下次多拉一次，绝不会显示错内容。 */
+let cacheSyncT = 0, histEpoch = 0;
+// 延迟多久把这一轮写进缓存：等 sessions.changed 那次 1.5s 防抖列表刷新落地。
+// 做成变量是为了让验证脚本能把它压到几十毫秒（否则测试窗口 2.6s，中途来一次真实的
+// 全量补拉就会把 histAll 换掉，测试跟着变成 flaky）。
+let cacheSyncMs = 2600;
+function rememberTurn(userText, asstText, hadImage){
+  const sid = S.storedId;
+  if (!sid || histSess !== sid) return;      // 现在画的不是这个会话的历史，别瞎拼
+  // 图片附件的 @image:<path> 引用是网关在服务端补的，手机这边拼不出来 ——
+  // 这时候宁可让缓存作废（下次全量拉一次），也别把缺图的版本写进去当命中。
+  if (hadImage) return;
+  const now = Date.now() / 1000;
+  let added = 0;
+  if (userText){ histAll.push({ role: 'user', text: userText, timestamp: now - 0.01 }); added++; }
+  if (asstText){ histAll.push({ role: 'assistant', text: asstText, timestamp: now }); added++; }
+  histShown += added;                        // 窗口跟着尾巴走，翻页下标才不漂
+  const epoch = ++histEpoch;
+  clearTimeout(cacheSyncT);
+  cacheSyncT = setTimeout(() => {
+    cacheSyncT = 0;
+    if (epoch !== histEpoch) return;         // 期间已经补拉过全量（histAll 被服务端数据替换）
+    if (S.storedId !== sid) return;          // 期间切走了
+    const row = ALL.find(x => x.id === sid) || {};
+    const n = Number(row.message_count) || 0;
+    if (!n) return;                          // 列表还没刷新到，宁可下次多拉一次
+    HCACHE.put(sid, histAll, n);
+  }, cacheSyncMs);                            // 默认 2600：sessions.changed 防抖 1500 + 列表 100~200 + 余量
+}
+
+/* ---------- 历史渲染：默认最近 160 条，更早的按需往前翻 ----------
+   以前是 slice(-160) 直接扔掉更早的（只留一句「已折叠」），可数据本来就整份
+   在内存里，白扔。现在留住全量，点一下再翻 160 条；翻页后按 scrollHeight 差
+   把视口钉在原处，别让人一翻就跳走。 */
+const HIST_PAGE = 160;
+let histAll = [], histShown = HIST_PAGE, histMore = null;
+let histSess = '';       // histAll 里的数据属于哪个会话（分清「同会话补拉」和「换会话」）
+let paintedFrom = 0;     // 已经画到 histAll 的哪个下标（增量翻页的锚点）
+let histOldestTs = 0;    // 已画出来的最老一条的时间戳（算时间分隔符用）
+let histPullCount = 0;   // 完成过几次全量 history（只读观测口，测试用）
+
+function msgText(m){
+  return (typeof m.text === 'string' ? m.text : (typeof m.content === 'string' ? m.content : '')) || '';
+}
+
+/* keepShown：同一个会话补拉（重连 / 点数变了 / 回前台）时要保留已经翻开的深度。
+   换会话或首次渲染一律回到 160 —— 否则在 A 翻到 480，切到 B 也画 480 条。 */
+function renderHistory(list, keepShown){
+  const sid = S.storedId || '';
+  const same = !!keepShown && sid === histSess;
+  // 只留真会画出来的：assistant 行里有一大堆只带 tool 调用、text 是空串的壳，
+  // 它们画不出气泡，但会把「还有 N 条」的数字撑大，也会占满 160 的窗口。
+  histAll = (list || []).filter(m => m && (m.role === 'user' || m.role === 'assistant') && msgText(m));
+  histSess = sid;
+  histEpoch++;            // 数据被整体替换：让还没落地的「轮次续命」写缓存作废
+  if (!same) histShown = HIST_PAGE;
+  paintHistory();
+}
+
+function sepEl(ts){
+  const sep = document.createElement('div');
+  sep.className = 'sep';
+  sep.textContent = fmtSep(ts);
+  return sep;
+}
+
+/* 把一段消息建成 DocumentFragment，不碰 msgsEl —— 增量翻页只插新增的那段。
+   prevTs 是这段之前那条的时间戳：决定第一条前面要不要补时间分隔符。 */
+function buildChunk(part, prevTs){
+  const frag = document.createDocumentFragment();
+  let lastTs = prevTs || 0;
+  for (const m of part){
+    const text = msgText(m);
+    if (!text) continue;
+    const ts = m.timestamp || 0;
+    if (ts && lastTs && (ts - lastTs) > 1800) frag.appendChild(sepEl(ts));
+    if (ts) lastTs = ts;
+    if (m.role === 'user'){
+      frag.appendChild(makeRow('user', userHTML(text), fmtTs(m.timestamp)).row);
+    } else {
+      const r3 = makeRow('assistant', md(text), fmtTs(m.timestamp));
+      decorateCode(r3.body);
+      frag.appendChild(r3.row);
+    }
+  }
+  return { frag, lastTs };
+}
+
+function moreEl(from){
+  const more = document.createElement('div');
+  more.className = 'more';
+  more.textContent = '加载更早的 ' + Math.min(HIST_PAGE, from) + ' 条（还有 ' + from + ' 条）';
+  more.onclick = expandOlder;
+  return more;
+}
+
+/* 全量重画：换会话、或者补拉到新数据时走这里。 */
+function paintHistory(){
+  const from = Math.max(0, histAll.length - histShown);
+  const part = histAll.slice(from);
+  msgsEl.innerHTML = '';
+  histMore = null;
+  paintedFrom = from;
+  histOldestTs = part.length ? (part[0].timestamp || 0) : 0;
+  if (!part.length){
+    msgsEl.innerHTML = '<div class="empty">这个会话还没有对话</div>';
+    return;
+  }
+  if (from > 0){
+    histMore = moreEl(from);
+    msgsEl.appendChild(histMore);
+  }
+  msgsEl.appendChild(buildChunk(part, from > 0 ? (histAll[from - 1].timestamp || 0) : 0).frag);
+}
+
+/* 往前翻一页：只把新增的 160 条插到「加载更早」后面，已经画好的节点一个都不动。
+   以前是清空整个列表重画 —— 翻到 480 条就是 480 个气泡 + 480 次 md() 重新解析，
+   手机上真要卡半秒。 */
+function expandOlder(){
+  if (!histAll.length || paintedFrom <= 0) return histShown;
+  histShown += HIST_PAGE;
+  const nextFrom = Math.max(0, histAll.length - histShown);
+  const chunk = histAll.slice(nextFrom, paintedFrom);
+  // 视口补偿必须作用在真正的滚动容器（scroll = main）。以前量的是 msgsEl —— 它不是
+  // 滚动容器，scrollTop 恒 0，那句赋值等于没写，全靠 Chrome 的 scroll anchoring 兜着；
+  // 实测关掉 anchoring 立刻漂 −15607px。iOS 的 WKWebView 不做 anchoring，会直接跳走。
+  const h0 = scroll.scrollHeight, t0 = scroll.scrollTop;
+  // 自己补位移时先把浏览器的锚定关掉，否则两边各补一次 = 滚双倍
+  const prevAnchor = scroll.style.overflowAnchor;
+  scroll.style.overflowAnchor = 'none';
+  const box = buildChunk(chunk, nextFrom > 0 ? (histAll[nextFrom - 1].timestamp || 0) : 0);
+  // 新增段和已画段之间也可能跨了 30 分钟
+  if (histOldestTs && box.lastTs && (histOldestTs - box.lastTs) > 1800) box.frag.appendChild(sepEl(histOldestTs));
+  const anchor = histMore;
+  if (anchor && anchor.parentNode) msgsEl.insertBefore(box.frag, anchor.nextSibling);
+  else msgsEl.insertBefore(box.frag, msgsEl.firstChild);
+  if (chunk.length && chunk[0].timestamp) histOldestTs = chunk[0].timestamp;
+  paintedFrom = nextFrom;
+  if (nextFrom > 0){
+    const fresh = moreEl(nextFrom);
+    if (anchor && anchor.parentNode) msgsEl.replaceChild(fresh, anchor);
+    else msgsEl.insertBefore(fresh, msgsEl.firstChild);
+    histMore = fresh;
+  } else if (anchor && anchor.parentNode){
+    msgsEl.removeChild(anchor);   // 翻到头了，按钮收掉
+    histMore = null;
+  }
+  scroll.scrollTop = t0 + (scroll.scrollHeight - h0);
+  requestAnimationFrame(() => { scroll.style.overflowAnchor = prevAnchor || ''; });
+  return histShown;
+}
+
+/* ---------- model picker ---------- */
+let MODEL_CACHE = null;
+let MQ = '';
+
+async function openModelPicker(){
+  drawer.classList.remove('on');
+  modelDrawer.classList.add('on');
+  if (MODEL_CACHE){ renderModels(); return; }
+  mlist.innerHTML = '<div class="empty">读取模型列表…<br><span style="font-size:11px">首次可能要几秒</span></div>';
+  try {
+    const res = await rpc('model.options', {session_id: S.sid}, 120000);
+    MODEL_CACHE = res || {};
+    renderModels();
+  } catch(e){
+    mlist.innerHTML = '<div class="empty">读取失败：' + esc(e.message) + '</div>';
+  }
+}
+
+function renderModels(){
+  const provs = ((MODEL_CACHE && MODEL_CACHE.providers) || []).slice();
+  const curModel = (MODEL_CACHE && MODEL_CACHE.model) || '';
+  const curProv = (MODEL_CACHE && MODEL_CACHE.provider) || '';
+  const q = (MQ || '').trim().toLowerCase();
+  if (!provs.length){ mlist.innerHTML = '<div class="empty">没有可用模型</div>'; return; }
+  // current provider first
+  provs.sort((a, b) => (b.is_current ? 1 : 0) - (a.is_current ? 1 : 0));
+  mlist.innerHTML = '';
+  let shown = 0;
+  for (const p of provs){
+    const all = p.models || [];
+    const models = all.filter(m => {
+      if (!q) return true;
+      const name = typeof m === 'string' ? m : (m.id || m.name || m.label || '');
+      return (String(name) + ' ' + p.slug).toLowerCase().indexOf(q) >= 0;
+    });
+    if (!models.length) continue;
+    const h = document.createElement('div');
+    h.className = 'grp';
+    h.textContent = p.slug + (p.is_current ? '  · 当前' : '') +
+                    (p.authenticated === false ? '  · 未授权' : '');
+    mlist.appendChild(h);
+    for (const m of models){
+      const name = typeof m === 'string' ? m : (m.id || m.name || m.label || '');
+      if (!name) continue;
+      shown++;
+      const el = document.createElement('div');
+      el.className = 'item' + (p.slug === curProv && name === curModel ? ' cur' : '');
+      el.innerHTML = '<div class="t"><div class="n">' + esc(name) + '</div></div>';
+      el.onclick = () => switchModel(p.slug, name);
+      mlist.appendChild(el);
+    }
+  }
+  if (!shown) mlist.innerHTML = '<div class="empty">没有匹配「' + esc(MQ) + '」的模型</div>';
+}
+
+async function switchModel(slug, model){
+  modelDrawer.classList.remove('on');
+  toast('切换中…');
+  try {
+    const r = await rpc('slash.exec', {
+      session_id: S.sid,
+      command: '/model --provider ' + slug + ' ' + model
+    }, 60000);
+    const out = String((r && r.output) || '').replace(/\s+/g, ' ').trim();
+    toast(out.slice(0, 50) || '已切换');
+    MODEL_CACHE = null;
+    setTimeout(refreshUsage, 500);
+  } catch(e){
+    toast('切换失败：' + e.message);
+  }
+}
+
+async function newSession(){
+  drawer.classList.remove('on');
+  clearMsgs();
+  S.storedId = null; S.sid = null; S.title = '新对话';
+  $('#ttlMain').textContent = '新对话';
+  $('#ttlSub').textContent = '新建中…';
+  try {
+    const res = await rpc('session.create', {source:'tui'}, 30000);
+    S.sid = res.session_id || null;
+    S.storedId = res.stored_session_id || null;
+    $('#ttlSub').textContent = '已就绪';
+    setSendEnabled(true);
+    ta.focus();
+  } catch (e){
+    $('#ttlSub').textContent = '新建失败';
+    flashConn('新建失败：' + e.message, true);
+  }
+}
+
+/* ---------- image attach ---------- */
+function compressToB64(file, maxPx){
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const max = maxPx || 1600;
+        let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        if (!w || !h) throw new Error('empty image');
+        if (Math.max(w, h) > max){
+          const k = max / Math.max(w, h);
+          w = Math.max(1, Math.round(w * k));
+          h = Math.max(1, Math.round(h * k));
+        }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        const dataUrl = c.toDataURL('image/jpeg', 0.85);
+        URL.revokeObjectURL(url);
+        resolve(dataUrl.split(',')[1]);
+      } catch(e){
+        URL.revokeObjectURL(url);
+        reject(e);
+      }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('读不出这张图')); };
+    img.src = url;
+  });
+}
+
+async function attachImage(file){
+  if (!S.sid){ toast('先选一个会话'); return; }
+  const stopTick = uploadTick('处理图片 ' + humanSize(file.size));
+  let b64;
+  try { b64 = await compressToB64(file, 1600); }
+  catch(e){ stopTick(); toast('图片读取失败'); return; }
+  try {
+    await rpc('image.attach_bytes', {
+      session_id: S.sid,
+      content_base64: b64,
+      filename: file.name || 'photo.jpg'
+    }, 90000);
+    pendingImgs.push({url: URL.createObjectURL(file), name: file.name || 'image'});
+    renderAttaches();
+    haptic(10);
+    toast('已附加图片');
+  } catch(e){
+    toast('附加失败：' + e.message);
+  } finally {
+    stopTick();
+  }
+}
+
+function humanSize(n){
+  if (!n || n < 1024) return (n || 0) + ' B';
+  if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
+  return (n / 1024 / 1024).toFixed(1) + ' MB';
+}
+function readAsDataURL(file){
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result || ''));
+    fr.onerror = () => reject(new Error('读不出这个文件'));
+    fr.readAsDataURL(file);
+  });
+}
+
+// 任意文件：走网关的 file.attach，字节用 data_url 带过去，网关存进
+// %LOCALAPPDATA%\hermes\attachments\ 并回一个 @file:<绝对路径>。发送时把这个
+// 引用前置到正文，模型就能用文件工具读它。
+// 图片仍走 image.attach_bytes —— 那条路会把像素真的喂给模型，能力和这条不一样。
+async function attachFile(file){
+  if (!S.sid){ toast('先选一个会话'); return; }
+  const name = file.name || 'file';
+  if (file.size > FILE_MAX){
+    toast('文件太大：' + humanSize(file.size) + '，上限 ' + humanSize(FILE_MAX));
+    return;
+  }
+  toast('上传中 ' + name + '…');
+  let dataUrl;
+  const stopTick = uploadTick('上传 ' + name + '（' + humanSize(file.size) + '）');
+  try { dataUrl = await readAsDataURL(file); }
+  catch(e){ stopTick(); toast('文件读取失败'); return; }
+  try {
+    const res = await rpc('file.attach', {
+      session_id: S.sid,
+      data_url: dataUrl,
+      name: name
+    }, 180000);
+    pendingFiles.push({ name: res.name || name, size: file.size, ref: res.ref_text });
+    renderAttaches();
+    haptic(10);
+    toast('已附加 ' + (res.name || name));
+  } catch(e){
+    toast('附加失败：' + e.message);
+  } finally {
+    stopTick();
+    syncSendBtn();
+  }
+}
+
+function renderAttaches(){
+  if (!pendingImgs.length && !pendingFiles.length){
+    attaches.classList.remove('on');
+    attaches.innerHTML = '';
+    return;
+  }
+  attaches.classList.add('on');
+  attaches.innerHTML = '';
+  pendingImgs.forEach((it, i) => {
+    const d = document.createElement('div');
+    d.className = 'thumb';
+    const im = document.createElement('img');
+    im.src = it.url;
+    d.appendChild(im);
+    const x = document.createElement('button');
+    x.textContent = '×';
+    x.onclick = () => { const [it2] = pendingImgs.splice(i, 1); try { URL.revokeObjectURL(it2.url); } catch(e){} renderAttaches(); };
+    d.appendChild(x);
+    attaches.appendChild(d);
+  });
+  pendingFiles.forEach((it, i) => {
+    const d = document.createElement('div');
+    d.className = 'fu';
+    const box = document.createElement('div');
+    const fn = document.createElement('div');
+    fn.className = 'fn'; fn.textContent = it.name;
+    const fs = document.createElement('div');
+    fs.className = 'fs'; fs.textContent = humanSize(it.size);
+    box.appendChild(fn); box.appendChild(fs);
+    d.appendChild(box);
+    const x = document.createElement('button');
+    x.textContent = '×';
+    x.onclick = () => { pendingFiles.splice(i, 1); renderAttaches(); };
+    d.appendChild(x);
+    attaches.appendChild(d);
+  });
+}
+
+function clearAttaches(){
+  for (const it of pendingImgs){ try { URL.revokeObjectURL(it.url); } catch(e){} }
+  pendingImgs = [];
+  pendingFiles = [];
+  renderAttaches();
+}
+
+/* ---------- send ---------- */
+let CAN_SEND = false;
+function setSendEnabled(on){ CAN_SEND = on; syncSendBtn(); }
+function syncSendBtn(){
+  if (S.streaming){
+    sendBtn.textContent = '停止';
+    sendBtn.classList.add('stop');
+    sendBtn.disabled = false;
+  } else {
+    sendBtn.textContent = '发送';
+    sendBtn.classList.remove('stop');
+    sendBtn.disabled = !CAN_SEND || (!ta.value.trim() && !pendingImgs.length && !pendingFiles.length);
+  }
+}
+async function stopTurn(){
+  const sid = S.sid;
+  S.streaming = false;
+  S.autoScroll = true;
+  syncSendBtn();
+  haptic(15);
+  if (!sid) return;
+  try {
+    await rpc('session.interrupt', {session_id: sid}, 15000);
+    toast('已停止');
+  } catch (e){
+    toast('停止失败：' + e.message);
+  }
+}
+
+function autoGrow(){
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(132, ta.scrollHeight) + 'px';
+}
+
+// 非图片附件的引用必须前置进正文（Desktop 端也是这么拼的），否则模型只看到
+// 「看这个文件」却没有路径。抽成纯函数，验证脚本可以只验拼装、不真的发出去。
+function buildPayload(text){
+  const refs = pendingFiles.map(f => f.ref).filter(Boolean).join('\n');
+  const body = text || (pendingImgs.length ? '看这张图' : (pendingFiles.length ? '看这个文件' : ''));
+  return refs ? refs + '\n' + body : body;
+}
+
+async function send(){
+  const text = ta.value.trim();
+  const hasImg = pendingImgs.length > 0;
+  const hasFile = pendingFiles.length > 0;
+  if ((!text && !hasImg && !hasFile) || S.streaming) return;
+  if (!S.sid){
+    await newSession();
+    if (!S.sid) return;
+  }
+  // 上一轮被「停止」或出错时留下的半截气泡还挂在 S.cur 上：不收尾的话，这一轮的回答
+  // 会拼进那个旧气泡（startAssistant 见 S.cur 就直接返回它）。
+  if (S.cur) abortStream('已中断');
+  // 非图片附件靠 @file:<path> 引用传给模型（Desktop 端也是这么拼的）。引用必须
+  // 前置，且每条带自己的名字，模型才知道哪个文件是哪个。
+  const payload = buildPayload(text);
+  // 记住这一轮发出去的东西：收尾时要把它们并进本地缓存（见 rememberTurn）。
+  // 用 payload 而不是显示文本 —— 服务端存的就是 payload（带 @file: 引用），
+  // 这样缓存里那一行和真拉回来的历史长得一样。
+  S.turnUserText = payload; S.turnMedia = hasImg;
+  ta.value = ''; autoGrow(); clearDraft();
+  haptic(10);
+  S.autoScroll = true;
+  const userEv = addUser(text || (hasFile ? '（文件）' : '（图片）'));
+  clearAttaches();
+  S.streaming = true; setSendEnabled(false);
+  try {
+    const ack = await rpc('prompt.submit', {session_id: S.sid, text: payload}, 30000);
+    if (ack && ack.status && ack.status !== 'streaming' && ack.status !== 'queued'){
+      flashConn('状态: ' + ack.status, false);
+    }
+    syncSub();
+    if (!S.cur) startAssistant();
+  } catch (e){
+    S.streaming = false; setSendEnabled(true);
+    flashConn('发送失败：' + friendlyErr('prompt.submit', e.message), true);
+    if (userEv) userEv.row.classList.add('failed');
+    attachRetry(userEv, payload);
+  }
+}
+
+/* ---------- boot ---------- */
+async function authed(){
+  try {
+    const r = await fetchT('/api/auth/me', {credentials:'same-origin'}, 8000);
+    return r.ok ? await r.json() : null;
+  } catch(e){ return null; }
+}
+
+// 网页端的登录表单默认值。口令**不预填**（以前写死过一个，等于把密码编进静态页）：
+// 用户名给个默认，密码留空，第一次手输，之后浏览器自己的密码管理器接管。
+const DEF_U = 'hermes', DEF_P = '';
+// 原来是一次性锁存：网关恰好在你开 App 时重启 → 第一次自动登录失败后就永远躺平，
+// 服务起来了页面还停在登录框上，只能手点。改成有限次退避重试。
+let loginTries = 0, loginRetryT = 0, autoSubmit = false;
+function autoLogin(){
+  if (loginTries >= 6) return;            // 6 次（约 2 分钟）还不行就停手，交给人
+  loginTries++;
+  if (!$('#lu').value) $('#lu').value = DEF_U;
+  if (!$('#lp').value) $('#lp').value = DEF_P;
+  autoSubmit = true;
+  setTimeout(() => {
+    const f = $('#loginForm');
+    try { f.requestSubmit ? f.requestSubmit() : f.dispatchEvent(new Event('submit', {cancelable:true})); }
+    catch(e){ autoSubmit = false; }
+  }, 120);
+}
+function loginBackoff(){
+  clearTimeout(loginRetryT);
+  loginRetryT = setTimeout(connect, Math.min(30000, 2000 * Math.pow(2, Math.min(loginTries, 4))));
+}
+
+// 连接重试：原来 connect() 只要抛一次就停在登录框上，谁也不再去试 —— 网关重启、
+// 换网、IPv6 前缀漂移都会让它永久躺平。现在任何失败路径都必须排下一次重试。
+let reconnT = 0, reconnTries = 0, connecting = false, reconnCalls = 0;
+function scheduleReconnect(ms){
+  clearTimeout(reconnT);
+  reconnCalls++;      // 只增不减的「排过几次重试」计数：验证脚本靠它证明没停摆（tries 连上就归零）
+  const wait = ms != null ? ms : Math.min(8000, 600 * Math.pow(1.6, Math.min(reconnTries++, 6)));
+  reconnT = setTimeout(() => { reconnT = 0; connect(); }, wait + Math.random() * 300);
+}
+
+async function connect(){
+  if (connecting) return;
+  if (S.ws && S.ws.readyState === 1 && S.sid) return;   // 已经连着就别开第二条
+  connecting = true;
+  if (!(S.ws && S.ws.readyState === 1)) setConn('连接中…');
+  try {
+    const me = await authed();
+    if (!me){ $('#login').classList.add('on'); autoLogin(); return; }
+    $('#login').classList.remove('on');
+    try {
+      const saved = localStorage.getItem('hermes.session');
+      if (saved && !S.storedId) S.storedId = saved;
+    } catch(e){}
+    // 已经连着但没有会话（比如 resume 失败过）时上面的早退条件不成立，这里会再开一条 socket。
+    // 旧那条还活着、还在派帧，必须先关干净 —— 否则两条并存，后一条的引用会被前一条的
+    // close 抹掉（见 openWs 里的身份检查）。
+    if (S.ws){
+      try { S.ws.onopen = S.ws.onmessage = S.ws.onclose = S.ws.onerror = null; S.ws.close(); } catch(e){}
+      S.ws = null;
+    }
+    await openWs();
+    // 列表先拉：下面补历史时要把 message_count 写进缓存当「有没有变」的信号，
+    // 顺序反了 ALL 还是空的，就会写成 n=0 —— 那样缓存永远命中不了。
+    const r = await rpc('session.list', {limit: 200}, 20000);
+    ALL = (r.sessions || r.rows || []).filter(x => x && x.id);
+    if (S.storedId){
+      try {
+        // 先画本地缓存：锁屏回来 / 冷启动别对着空消息区干等 0.3~1 s 的全量。
+        let rec = null;
+        try { rec = await HCACHE.get(S.storedId); } catch(e){}
+        const bootRow = ALL.find(x => x.id === S.storedId) || {};
+        if (rec){
+          renderHistory(rec.msgs);
+          scrollEnd();
+          $('#ttlSub').textContent = '缓存 ' + relTime(rec.t / 1000) + ' · 同步中…';
+        }
+        const res = await rpc('session.resume', {session_id: S.storedId, source:'tui',
+                                                inline_images:false, defer_history:true}, 60000);
+        if (res.session_id) S.sid = res.session_id;
+        if (res.info && res.info.title) S.title = res.info.title;
+        replayServerRequests(res);
+        // 点数没变 = 没有新消息，缓存就是最新的：这一条路以前是无条件拉全量，
+        // 等于每次冷启动都白扔一次 150–500 KB / 0.5–1 s。
+        if (cacheHitFor(rec, bootRow)){
+          syncSub(); setSendEnabled(true); refreshUsage();
+        } else if (S.sid){
+          await pullHistory(S.storedId || S.sid, openSeq);
+        }
+      } catch(e){}
+    }
+    // 同样不重排：服务端给的就是最近活动序，real[0] 因此就是「最后动过的那个会话」
+    if (ALL.length && !S.storedId){
+      const real = ALL.filter(x => (x.source || '') !== 'cron' && (x.message_count || 0) > 0);
+      openSession(real.length ? real[0] : ALL[0]);
+    }
+  } catch (e){
+    const msg = String((e && e.message) || e);
+    // 401 = cookie 没了，走登录；其余（网关重启 / 网络抖动 / 地址变了）退避后再连
+    if (/\b401\b/.test(msg)) { $('#login').classList.add('on'); autoLogin(); }
+    else {
+      setConn('连接失败，重试中…', true);
+      scheduleReconnect();
+    }
+  } finally {
+    connecting = false;
+  }
+}
+
+$('#loginForm').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  $('#loginErr').textContent = '';
+  try {
+    const r = await fetchT('/auth/password-login', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({provider:'basic', username: $('#lu').value, password: $('#lp').value})
+    }, 12000);
+    if (!r.ok){
+      // 429 = 网关的暴力破解节流（10 次/60 秒，按客户端 IP）。继续自动重试只会
+      // 把自己的窗口越撑越长，看起来就是「一直连不上」——停手，交给人过一分钟再点。
+      if (r.status === 429){
+        $('#loginErr').textContent = '登录试太多次了，等 1 分钟再点「重新连接」';
+        loginTries = 6; autoSubmit = false;
+        clearTimeout(loginRetryT);
+        return;
+      }
+      $('#loginErr').textContent = r.status === 401 ? '用户名或密码不对' : ('登录失败 ' + r.status);
+      // 自动填的这轮失败 → 多半是网关还没起来，退避后再试；手输的就别烦人，等他自己改
+      if (autoSubmit) loginBackoff();
+      autoSubmit = false;
+      return;
+    }
+    loginTries = 0; autoSubmit = false;
+    clearTimeout(loginRetryT);
+    $('#login').classList.remove('on');
+    connect();
+  } catch (e){ $('#loginErr').textContent = friendlyErr('login', e.message); autoSubmit = false; }
+});
+
+// 人一动手接管，就停掉自动重试，别跟他抢输入框
+['#lu', '#lp'].forEach(sel => {
+  const el = $(sel);
+  if (el) el.addEventListener('input', () => {
+    loginTries = 0; autoSubmit = false; clearTimeout(loginRetryT);
+  });
+});
+
+sendBtn.addEventListener('click', () => { if (S.streaming) stopTurn(); else send(); });
+
+/* image attach */
+btnImg.addEventListener('click', () => {
+  if (!S.sid){ toast('先选一个会话'); return; }
+  fileIn.click();
+});
+fileIn.addEventListener('change', async () => {
+  const files = Array.from(fileIn.files || []);
+  fileIn.value = '';
+  for (const f of files) await attachImage(f);
+});
+
+/* file attach：任意文件（PDF / docx / zip / 代码 / 音视频都行），不只图片 */
+btnFile.addEventListener('click', () => {
+  if (!S.sid){ toast('先选一个会话'); return; }
+  filePick.click();
+});
+filePick.addEventListener('change', async () => {
+  const files = Array.from(filePick.files || []);
+  filePick.value = '';
+  for (const f of files) await attachFile(f);
+});
+
+/* draft persistence */
+// 草稿按会话存。以前是一个全局 key：在 A 打一半字切到 B，B 的输入框里摆着 A 的话，
+// 按发送就发到 B 去了；clearDraft 删的也是同一个 key，A 的草稿跟着一起没。
+const draftKey = () => 'hermes.draft.' + (S.storedId || '_');
+function saveDraft(){ try { localStorage.setItem(draftKey(), ta.value); } catch(e){} }
+function loadDraft(){ try { ta.value = localStorage.getItem(draftKey()) || ''; autoGrow(); syncSendBtn(); } catch(e){ ta.value = ''; } }
+function clearDraft(){ try { localStorage.removeItem(draftKey()); } catch(e){} }
+
+ta.addEventListener('input', () => { autoGrow(); saveDraft(); syncSendBtn(); });
+ta.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){
+    e.preventDefault();
+    if (!S.streaming) send();
+  }
+});
+
+/* scroll + back-to-bottom */
+scroll.addEventListener('scroll', () => {
+  S.autoScroll = nearBottom();
+  if (S.autoScroll) unread = 0;
+  syncUnread();
+});
+toBottomEl.addEventListener('click', () => {
+  S.autoScroll = true;
+  unread = 0;
+  syncUnread();
+  toBottom(true);
+});
+
+/* session search */
+qEl.addEventListener('input', () => { Q = qEl.value; renderList(); });
+
+/* long-press a bubble to copy its text */
+let pressTimer = null, pressAt = null, pressBubble = null;
+const PRESS_SLOP = 10;     // 手指容差（px）：550ms 内零位移在真机上不可能，3px 抖动不该取消
+msgsEl.addEventListener('touchstart', ev => {
+  const b = ev.target.closest ? ev.target.closest('.bubble') : null;
+  if (!b) return;
+  // 长按图片交给系统（WebView 的「保存图片」）；否则这里会顺手把整段文字复制走，
+  // 用户想存图却得到一段文本（实测长按图片复制到的是「图 0」这种正文）。
+  if (ev.target.closest && ev.target.closest('img.hi')) return;
+  const t = ev.touches && ev.touches[0];
+  pressAt = t ? { x: t.clientX, y: t.clientY } : null;
+  pressBubble = b;
+  clearTimeout(pressTimer);
+  pressTimer = setTimeout(() => {
+    pressTimer = null;
+    if (!pressBubble) return;
+    copyText(bubbleText(pressBubble));
+    pressBubble.style.transition = 'box-shadow .15s';
+    pressBubble.style.boxShadow = '0 0 0 2px var(--acc)';
+    const el = pressBubble;
+    setTimeout(() => { el.style.boxShadow = ''; }, 600);
+  }, 550);
+}, {passive: true});
+// 只有明显滑动才取消（以前 move 一触发就 clearTimeout，等于长按成功率接近 0）
+msgsEl.addEventListener('touchmove', ev => {
+  if (!pressTimer || !pressAt) return;
+  const t = ev.touches && ev.touches[0];
+  if (!t) return;
+  const dx = t.clientX - pressAt.x, dy = t.clientY - pressAt.y;
+  if (dx * dx + dy * dy > PRESS_SLOP * PRESS_SLOP) { clearTimeout(pressTimer); pressTimer = null; }
+}, {passive: true});
+['touchend','touchcancel'].forEach(t =>
+  msgsEl.addEventListener(t, () => { clearTimeout(pressTimer); pressTimer = null; }, {passive: true}));
+
+/* 长按复制要复制的正文。必须摘掉「复制」按钮和时间戳：
+   它们也在 .bubble 里，innerText 会把「复制」两个字一起带出去（实测复制代码块末尾多一行“复制”）。
+   clone 得挂进文档 —— 离屏节点的 innerText 会退化成 textContent，换行全丢。 */
+function bubbleText(b){
+  if (!b) return '';
+  const clone = b.cloneNode(true);
+  try { clone.querySelectorAll('.cc, .meta').forEach(x => x.remove()); } catch(e){}
+  clone.style.cssText = 'position:fixed;left:-9999px;top:0;width:' + (b.clientWidth || 300) + 'px';
+  document.body.appendChild(clone);
+  const t = String((clone.innerText || clone.textContent || '')).trim();
+  try { clone.remove(); } catch(e){}
+  return t;
+}
+
+function copyText(t){
+  if (!t) return;
+  const done = () => { haptic(8); toast('已复制'); };
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(done).catch(() => fallbackCopy(t, done));
+  } else fallbackCopy(t, done);
+}
+function fallbackCopy(t, done){
+  const x = document.createElement('textarea');
+  x.value = t;
+  x.style.position = 'fixed'; x.style.left = '-9999px'; x.style.top = '0';
+  document.body.appendChild(x);
+  x.select(); x.setSelectionRange(0, 99999);
+  try { document.execCommand('copy'); done(); } catch(e){ toast('复制失败'); }
+  x.remove();
+}
+
+$('#btnList').addEventListener('click', () => {
+  drawer.classList.add('on');
+  if (ALL.length) renderList(); else loadSessions();
+  refreshSessions();          // 列表可能是几小时前的：打开时静默对一次账
+  renderAddrs();              // 顺手把服务端当前地址刷出来（地址会漂）
+  setTimeout(() => { try { listEl.scrollTop = 0; } catch(e){} }, 30);
+});
+
+// 服务端地址面板：校园 RA 前缀会变，别让人靠记忆找一个过期 IP
+let addrsAt = 0;
+async function renderAddrs(){
+  const box = document.getElementById('addrBox');
+  if (!box) return;
+  if (Date.now() - addrsAt < 20000) return;
+  addrsAt = Date.now();
+  let urls = [], stamp = '';
+  try {
+    const r = await fetch('/addrs.json', {credentials:'same-origin', cache:'no-store'});
+    if (r.ok){ const j = await r.json(); urls = j.urls || []; stamp = j.updated || ''; }
+  } catch(e){}
+  if (!urls.length) urls = [location.origin + '/'];
+  box.innerHTML = '<div class="ah2">服务端地址 · 点一下复制</div>' +
+    urls.map(u => '<div class="u" data-u="' + esc(u) + '">' + esc(u) + '</div>').join('') +
+    (stamp ? '<div class="stamp">' + esc(stamp.slice(0, 19).replace('T', ' ')) + ' 更新</div>' : '');
+  const nodes = box.querySelectorAll ? box.querySelectorAll('.u') : [];
+  for (const n of nodes) n.onclick = () => copyText(n.dataset ? n.dataset.u : n.textContent);
+}
+
+$('#btnReconn').addEventListener('click', () => {
+  reconnTries = 0;
+  clearTimeout(reconnT);
+  try { if (S.ws) S.ws.close(); } catch(e){}
+  S.ws = null; connecting = false;
+  setConn('重连中…');
+  connect();
+});
+$('#btnRelogin').addEventListener('click', () => {
+  loginTries = 0; autoSubmit = false;
+  clearTimeout(loginRetryT);
+  $('#loginErr').textContent = '';
+  connecting = false;
+  connect();
+  setConn('重连中…');            // connect() 入口会写「连接中…」；这里压回来，点了必有反应
+});
+$('#ttlBox').addEventListener('click', openModelPicker);
+$('#closeModel').addEventListener('click', () => modelDrawer.classList.remove('on'));
+modelDrawer.addEventListener('click', e => { if (e.target === modelDrawer) modelDrawer.classList.remove('on'); });
+mqEl.addEventListener('input', () => { MQ = mqEl.value; renderModels(); });
+$('#closeDrawer').addEventListener('click', () => drawer.classList.remove('on'));
+drawer.addEventListener('click', e => { if (e.target === drawer) drawer.classList.remove('on'); });
+$('#btnNew').addEventListener('click', newSession);
+
+loadDraft();
+connect();
+
+/* ---------- 壳版本 / APK 更新提示 ----------
+ * 页面不知道自己跑在哪个版本的壳里，问 HermesApp（MainActivity 注入，只回版本号）。
+ * 浏览器里打开时没有这个对象，整段静默跳过。
+ */
+const SHELL = (() => {
+  try { return window.HermesApp ? JSON.parse(window.HermesApp.version()) : null; }
+  catch(e){ return null; }
+})();
+
+async function checkUpdate(){
+  if (!SHELL || !SHELL.code) return;
+  let v;
+  try {
+    const r = await fetch('version.json', {cache:'no-store'});
+    if (!r.ok) return;
+    v = await r.json();
+  } catch(e){ return; }
+  if (!v || !v.code || v.code <= SHELL.code) return;
+  const a = $('#upd');
+  if (!a) return;
+  const b = a.querySelector('b');
+  if (b) b.textContent = v.name || ('#' + v.code);
+  a.hidden = false;
+}
+checkUpdate();
+
+/* ---------- 心跳 / 僵尸 socket / 回前台重连 (#4) ---------- */
+const PING_MS = 15000, STALE_MS = 45000;
+let pingSeq = 0;
+setInterval(() => {
+  const ws = S.ws;
+  if (!ws || ws.readyState !== 1) return;
+  // 45s 内一帧都没收到 → 判僵尸（锁屏后 WebView 被冻结最常见：readyState 还是 1，
+  // 发出去的东西全掉进虚空），主动拆掉，让 onclose 走重连退避
+  if (S.lastFrameAt && Date.now() - S.lastFrameAt > STALE_MS){
+    flashConn('连接已失效，重连中…', true);
+    try { ws.close(); } catch(e){}
+    return;
+  }
+  // 旧写法 method:'ping' 网关其实会回一帧 {pong:true}，但页面从来不读回包，
+  // 所以连接是死是活它自己也不知道 —— 真正缺的是上面这个 lastFrameAt 看门狗。
+  // 顺带换成 gateway.ping：ws.py:708 的快速通道，直接回 {ok:true} 并回显 id
+  try { ws.send(JSON.stringify({jsonrpc:'2.0', id:'ping-' + (++pingSeq), method:'gateway.ping', params:{}})); } catch(e){}
+}, PING_MS);
+
+window.addEventListener('pagehide', () => IMGDIM.flush());
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden){ IMGDIM.flush(); return; }
+  const ws = S.ws;
+  if (!ws){ connect(); return; }
+  if (ws.readyState === 1 && S.lastFrameAt && Date.now() - S.lastFrameAt > STALE_MS){
+    try { ws.close(); } catch(e){}
+  } else if (ws.readyState === 3){
+    connect();
+  }
+  refreshSessions();       // 回前台顺手把列表对一次账（别处可能已经改了会话）
+});
+
+// 调试钩子：console 里 __hm.state() 看连接年龄，__hm.goStale() 手工喂一个假僵尸
+window.__hm = {
+  state: () => ({ connected: !!(S.ws && S.ws.readyState === 1), retries: S.retries,
+                  lastFrameAge: S.lastFrameAt ? Date.now() - S.lastFrameAt : null,
+                  sessions: ALL.length, sid: S.sid, streaming: S.streaming, loginTries,
+                  reconnTries, connecting, files: pendingFiles.length, imgs: pendingImgs.length }),
+  goStale: () => { S.lastFrameAt = Date.now() - 60000; },
+  drop: () => { try { S.ws && S.ws.close(); } catch(e){} },
+  kick: () => { connecting = false; connect(); },
+  // 验证用：塞一个假附件（真文件已经由 file.attach 上传过，这里只验发送时引用有没有拼进正文）
+  fakeFile: (name, ref) => { pendingFiles.push({ name, size: 4096, ref }); renderAttaches(); syncSendBtn(); },
+  retry: () => ({ calls: reconnCalls, armed: !!reconnT, tries: reconnTries }),
+  // 只验「正文怎么拼」的纯函数。绝不给验证脚本一个能真发 prompt 的入口：
+  // 页面启动会自动打开最近的真实会话，一 send 就是往用户的对话里塞消息。
+  payload: (text) => buildPayload(text),
+  attachFile: (f) => attachFile(f),
+  clearAttaches: () => clearAttaches(),
+  // 会话历史缓存的入口：验证脚本要证明「第二次点进同一个会话时先画缓存、不等网络」
+  histCache: () => HCACHE,
+  openSession: (row) => openSession(row),
+  // 历史翻页 / 缓存命中判定 / 流式节流，给 harness 用（都不是发送入口）
+  histState: () => ({ all: histAll.length, shown: histShown, more: !!(histMore && histMore.textContent) }),
+  expandOlder: () => { if (histMore && histMore.onclick) histMore.onclick(); return histShown; },
+  cacheHitFor: (rec, row) => cacheHitFor(rec, row),
+  renderHistory: (l, keep) => renderHistory(l, keep),
+  streamAppend: (t) => appendAssistant(t),
+  streamState: () => (S.cur ? { len: S.cur.text.length, html: ((S.cur.body && S.cur.body.innerHTML) || '').length } : null),
+  // 增量翻页要证明「已画出来的节点没被推倒重来」：数量只增不减，且同一个气泡对象还在列表里
+  histDom: () => ({ nodes: (msgsEl.children || []).length, oldest: histOldestTs, paintedFrom }),
+  histPulls: () => histPullCount,
+  histFirstBubble: () => (msgsEl.children || []).find(n => n && /(^| )row( |$)/.test(n.className || '')) || null,
+  // 收尾把本轮并进缓存（P1）：harness 直接调它，不必真发一条 prompt
+  rememberTurn: (u, a, img) => rememberTurn(u, a, img),
+  setCacheSyncMs: (n) => { cacheSyncMs = Number(n) || 2600; return cacheSyncMs; },
+  uploadTick: (label) => uploadTick(label),   // 返回 stop()，验证脚本用它确认「上传期间提示不会消失」
+  imgDim: () => IMGDIM.size(),               // 图片尺寸记忆里有几条
+  imgDimSet: (p, w, h) => { IMGDIM.set(p, w, h); return IMGDIM.get(p); },
+  imgDimClear: () => { IMGDIM.clear(); return IMGDIM.size(); },
+  // 图片路径：历史里的 @image: 现在应该走鉴权的 /api/fs/download，而不是 /assets/img
+  imgTag: (p) => imgTag(p),
+  // 缓存续命 / 列表分组 / 上传上限的观测口（都是只读状态，没有发送入口）
+  stored: () => ({ storedId: S.storedId, sid: S.sid, histSess }),
+  useStored: (id) => { S.storedId = id; },
+  // 只给验证用：事件过滤器按 S.sid 判断归属，测试需要一个确定的 sid。
+  useSid: (id) => { S.sid = id; return S.sid; },
+  realRow: () => {
+    const r = ALL.find(x => (x.message_count || 0) > 0 && (x.source || '') !== 'cron');
+    return r ? { id: r.id, message_count: r.message_count } : null;
+  },
+  // 注意：真浏览器里 children 是 HTMLCollection，没有 filter/indexOf —— 得先转数组，
+  // 否则这两个口一调就抛（harness 的 shim 给的是数组，所以套件里看不出来）。
+  hasNode: (n) => Array.prototype.indexOf.call(msgsEl.children || [], n) >= 0,
+  fileMax: () => FILE_MAX,
+  listIds: (n) => ALL.slice(0, n || 3).map(r => ({ id: r.id, title: (r.title || '').slice(0, 12) })),
+  md: (t) => md(t),                        // 纯函数：markdown 渲染结果直接可断言
+  abortStream: (why) => abortStream(why),  // 断线收尾（onclose 里也调它）
+  // 验证用：喂一条网关事件，验「出错/断线之后下一轮不会拼进旧气泡」「别的会话的帧不画」。
+  // 它只改页面状态，不发任何请求，也不碰 prompt.submit。
+  event: (p) => { onEvent(p || {}); return { streaming: S.streaming, cur: !!S.cur,
+    rows: (msgsEl.children || []).length }; },
+  renderList: () => renderList(),          // 只重画抽屉列表，不发任何请求
+  listDom: () => { const k = Array.from(listEl.children || []);
+                   return { total: k.length,
+                            grps: k.filter(n => /(^| )grp( |$)/.test((n && n.className) || '')).length }; },
+};
+})();
+</script>
+</body>
+</html>
