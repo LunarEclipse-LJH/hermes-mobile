@@ -57,6 +57,18 @@ bash apk/build.sh          # 产出 hermes-mobile.apk，用同一个 keystore �
 
 开机自启：把 `runner.vbs` 的快捷方式放进 `shell:startup`。它先 `netstat` 查 `[::]:9119`，已在监听就直接退出（幂等），起窗口隐藏、输出全进 `dashboard.log`。
 
+进程看护（推荐）：`start.cmd` 只在登录时跑一次。合盖过夜 / 待机恢复时整棵进程树可能一起死掉，没有任何东西会把它拉回来。`watchdog.ps1` 补这一层：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File install_watchdog.ps1
+```
+
+- 三个触发器：登录 / 每 5 分钟 / 系统唤醒（Power-Troubleshooter EventID 1）。
+- 判两行监听：缺 `[::]:9119` 起整链，只缺 `0.0.0.0:9119` 只起桥。
+- 子进程全用 `Win32_ProcessStartup.ShowWindow=0` 起，桌面上不会闪黑框；日志在 `watchdog.log`（512 KB 滚动，不进仓库）。
+- 路径全部从脚本自身目录推，仓库放哪都行。
+- 卸载：`Unregister-ScheduledTask -TaskName 'Hermes Mobile Watchdog' -Confirm:$false`
+
 ## 功能
 
 **对话** · 流式回复（按帧节流，长回答不卡）· 停止按钮（`session.interrupt`）· 工具调用卡片（点开展开参数与结果）· 长按复制整条 · 代码块一键复制 · 30 分钟以上自动插日期分隔线 · 每轮 `耗时 · token · tok/s`
