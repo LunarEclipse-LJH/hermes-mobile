@@ -125,7 +125,10 @@ process.exit(bad.length ? 1 : 0);
         # redirect) counts. /api/status is deliberately NOT used: it reaches into
         # the gateway and costs ~0.5 s idle, >6 s under load -- as a probe it
         # turns a busy machine into a fake "address dead".
-        rc, out = run(["curl", "-s", "-o", os.devnull, "-m", "8", "-w", "%{http_code}", url])
+        # --noproxy '*': these are local/campus addresses; an HTTP_PROXY in the
+        # environment (Clash etc.) would swallow the request and report 000 for a
+        # perfectly live listener.
+        rc, out = run(["curl", "--noproxy", "*", "-s", "-o", os.devnull, "-m", "8", "-w", "%{http_code}", url])
         return out.strip() or "000"
 
     def ipv4_status():
