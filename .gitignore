@@ -2,6 +2,7 @@ apk/build/
 *.class
 *.dex
 dashboard.log
+watchdog.log
 assets/img/
 addrs.json
 __pycache__/
